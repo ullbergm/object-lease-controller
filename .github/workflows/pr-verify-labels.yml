@@ -1,0 +1,28 @@
+---
+name: PR - Verify Labels
+
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+
+concurrency:
+  group: pr-labels
+
+jobs:
+  pr_labels:
+    name: 🏭 Verify
+    runs-on: ubuntu-latest
+
+    permissions: write-all
+
+    steps:
+      - name: 🏷 Verify PR has a valid label
+        uses: jesusvasquez333/verify-pr-label-action@v1.4.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          invalid-labels: >-
+            invalid, stale, incomplete, in-progress
+          valid-labels: >-
+            breaking-change, bugfix, documentation, enhancement,
+            refactor, performance, new-feature, maintenance, ci, dependencies
+          disable-reviews: true

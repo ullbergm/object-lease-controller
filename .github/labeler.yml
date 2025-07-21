@@ -1,0 +1,20 @@
+---
+area/github:
+- changed-files:
+  - any-glob-to-any-file: ".github/**/*"
+
+area/docs:
+- changed-files:
+  - any-glob-to-any-file: "docs/**/*"
+  - any-glob-to-any-file: "**/*.md"
+
+area/source:
+- changed-files:
+  - any-glob-to-any-file: "api/**/*"
+  - any-glob-to-any-file: "cmd/**/*"
+  - any-glob-to-any-file: "hack/**/*"
+  - any-glob-to-any-file: "internal/**/*"
+
+area/test:
+- changed-files:
+  - any-glob-to-any-file: "src/test/**/*"

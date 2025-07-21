@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- object-lease-controller_v1alpha1_leasecontroller.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

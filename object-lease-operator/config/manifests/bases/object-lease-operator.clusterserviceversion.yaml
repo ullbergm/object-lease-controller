@@ -1,0 +1,51 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    categories: Networking
+    certified: "false"
+    containerImage: ghcr.io/ullbergm/object-lease-operator:latest
+    description: Operator to manage object leases in Kubernetes.
+    repository: https://github.com/ullbergm/object-lease-controller
+    support: Magnus Ullberg <magnus@ullberg.us>
+  name: object-lease-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions: {}
+  description: |
+    ## Introduction
+    This Operator manages object leases in Kubernetes.
+    ## Object Lease Management
+    The Object Lease Operator integrates with Kubernetes to manage the lifecycle of object leases, ensuring that resources are properly allocated and released as needed.
+  displayName: Object Lease Operator
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: true
+    type: SingleNamespace
+  - supported: true
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - Lease
+  - TTL
+  - controller
+  links:
+  - name: Github Repo
+    url: https://github.com/ullbergm/object-lease-controller
+  maintainers:
+  - email: magnus@ullberg.us
+    name: Magnus Ullberg
+  maturity: beta
+  minKubeVersion: 1.13.0
+  provider:
+    name: Magnus Ullberg
+  version: 0.0.0

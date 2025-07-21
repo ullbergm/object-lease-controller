@@ -1,0 +1,26 @@
+---
+name: PR - Labeler
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: labeler
+
+jobs:
+  labeler:
+    name: ♻️ Sync labels
+    runs-on: ubuntu-latest
+
+    permissions: write-all
+
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Apply labels
+        uses: actions/labeler@v5
+        with:
+          configuration-path: .github/labeler.yml
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"

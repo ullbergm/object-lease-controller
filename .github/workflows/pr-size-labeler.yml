@@ -1,0 +1,29 @@
+---
+name: PR - Size Labeler
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  size-label:
+    name: Label Size
+    runs-on: ubuntu-latest
+
+    permissions: write-all
+
+    steps:
+      - name: size-label
+        uses: "pascalgn/size-label-action@v0.5.5"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        with:
+          sizes: >
+            {
+              "0": "XS",
+              "10": "S",
+              "30": "M",
+              "100": "L",
+              "500": "XL",
+              "1000": "XXL"
+            }
