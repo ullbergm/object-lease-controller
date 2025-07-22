@@ -16,6 +16,9 @@ Each controller:
 - Manages lease of objects associated with those resources.
 - Ensures lease lifecycle (renewal, expiration) is handled appropriately.
 
+## Flow Diagram
+![Object Lease Operator Flow](docs/object-lease-controller-flow.png)
+
 ## Configuration
 
 ### LeaseController
