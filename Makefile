@@ -1,4 +1,4 @@
-IMG ?= ghcr.io/ullbergm/object-lease-controller:latest
+IMG ?= quay.io/ullbergm/object-lease-controller:latest
 
 run: build
 	./bin/lease-controller -group startpunkt.ullberg.us -kind Application -version v1alpha2 -leader-elect -leader-elect-namespace default
