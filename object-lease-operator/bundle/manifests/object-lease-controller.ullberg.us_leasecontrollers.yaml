@@ -31,6 +31,32 @@ spec:
             type: object
           spec:
             description: Spec defines the desired state of LeaseController
+            properties:
+              group:
+                description: Group defines the group of the object the LeaseController
+                  is managing.
+                type: string
+              kind:
+                description: Kind defines the kind of the object the LeaseController
+                  is managing.
+                properties:
+                  plural:
+                    description: Plural is the plural name of the kind.
+                    type: string
+                  singular:
+                    description: Singular is the singular name of the kind.
+                    type: string
+                required:
+                - singular
+                - plural
+                type: object
+              version:
+                description: Version defines the version of the object the LeaseController
+                  is managing.
+                type: string
+            required:
+            - version
+            - kind
             type: object
             x-kubernetes-preserve-unknown-fields: true
           status:

@@ -1,9 +1,10 @@
 apiVersion: object-lease-controller.ullberg.us/v1alpha1
 kind: LeaseController
 metadata:
-  name: leasecontroller-sample
+  name: leasecontroller-deployments
 spec:
-  leasecontroller:
-    group: "apps"
-    version: "v1"
-    kind: "Deployment"
+  group: "apps"
+  version: "v1"
+  kind:
+    singular: "Deployment"
+    plural: "Deployments"

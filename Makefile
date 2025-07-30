@@ -1,4 +1,4 @@
-IMG ?= ghcr.io/ullbergm/object-lease-controller:latest
+IMG ?= quay.io/ullbergm/object-lease-controller:latest
 
 run: build
 	./bin/lease-controller -group startpunkt.ullberg.us -kind Application -version v1alpha2 -leader-elect -leader-elect-namespace default
@@ -12,7 +12,10 @@ fmt:
 vet:
 	go vet ./...
 
-build: tidy fmt vet
+test: tidy fmt vet
+	go test ./... -timeout 30s
+
+build: tidy fmt vet test
 	go build -o bin/lease-controller ./cmd/main.go
 
 docker-build: build
@@ -21,4 +24,4 @@ docker-build: build
 docker-push:
 	docker push $(IMG)
 
-.PHONY: build docker-build docker-push
+.PHONY: run tidy fmt vet test build docker-build docker-push

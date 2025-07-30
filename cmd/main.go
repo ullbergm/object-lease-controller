@@ -123,8 +123,9 @@ func main() {
 
 	// Create a LeaseWatcher for the specified GVK
 	lw := &leasewatcher.LeaseWatcher{
-		Client: mgr.GetClient(),
-		GVK:    gvk,
+		Client:   mgr.GetClient(),
+		GVK:      gvk,
+		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
 	}
 
 	// Register the LeaseWatcher with the manager
