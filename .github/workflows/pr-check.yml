@@ -24,8 +24,5 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run make generate
-        run: make generate
-
       - name: Check commits
         run: pre-commit run --hook-stage manual --all-files
