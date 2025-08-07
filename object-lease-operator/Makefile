@@ -54,7 +54,7 @@ OPERATOR_SDK_VERSION ?= v1.41.1
 CONTAINER_TOOL ?= docker
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= ghcr.io/ullbergm/object-lease-operator-controller:v$(VERSION)
 
 .PHONY: all
 all: docker-build

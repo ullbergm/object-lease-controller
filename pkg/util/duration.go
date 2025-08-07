@@ -32,6 +32,7 @@ func ParseFlexibleDuration(val string) (time.Duration, error) {
 	}
 	var sumDur time.Duration
 	for _, str := range strs {
+		str = strings.TrimSpace(str)
 		var _hours time.Duration = 1
 		for unit, hours := range unitMap {
 			if strings.Contains(str, unit) {

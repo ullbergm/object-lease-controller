@@ -45,18 +45,72 @@ rules:
   - patch
   - update
   - watch
-- verbs:
-  - "*"
-  apiGroups:
+
+##
+## Creating deployments, etc.
+##
+- apiGroups:
   - ""
   resources:
-  - "serviceaccounts"
-  - "services"
-- verbs:
-  - "*"
-  apiGroups:
-  - "apps"
+  - pods
+  - services
+  - services/finalizers
+  - endpoints
+  - persistentvolumeclaims
+  - events
+  - configmaps
+  - secrets
+  - serviceaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
   resources:
-  - "deployments"
+  - deployments
+  - daemonsets
+  - replicasets
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+
+##
+## Create Roles and RoleBindings
+##
+- apiGroups:
+    - rbac.authorization.k8s.io
+  resources:
+    - clusterroles
+    - clusterrolebindings
+    - roles
+    - rolebindings
+  verbs:
+    - '*'
+
+##
+## Need to be able to delete any object since that is what the operator does
+##
+- apiGroups:
+    - "*"
+  resources:
+    - "*"
+  verbs:
+    - get
+    - list
+    - watch
+    - patch
+    - update
+    - delete
 
 # +kubebuilder:scaffold:rules

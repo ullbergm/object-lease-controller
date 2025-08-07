@@ -57,7 +57,7 @@ func main() {
 	if kind == "" {
 		kind = os.Getenv("LEASE_GVK_KIND")
 	}
-	if enableLeaderElection == false {
+	if !enableLeaderElection {
 		if val := os.Getenv("LEASE_LEADER_ELECTION"); val != "" {
 			var err error
 			enableLeaderElection, err = strconv.ParseBool(val)
@@ -123,8 +123,9 @@ func main() {
 
 	// Create a LeaseWatcher for the specified GVK
 	lw := &leasewatcher.LeaseWatcher{
-		Client: mgr.GetClient(),
-		GVK:    gvk,
+		Client:   mgr.GetClient(),
+		GVK:      gvk,
+		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
 	}
 
 	// Register the LeaseWatcher with the manager

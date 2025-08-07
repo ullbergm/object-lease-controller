@@ -27,13 +27,14 @@ rules:
   - events
   verbs:
   - create
+  - patch
 
 - apiGroups:
   - {{ .Values.group | quote }}
   resources:
-  - {{ .Values.kind | lower }}s
-  - {{ .Values.kind | lower }}s/status
-  - {{ .Values.kind | lower}}s/finalizers
+  - {{ .Values.kind.plural | lower }}
+  - {{ .Values.kind.plural | lower }}/status
+  - {{ .Values.kind.plural | lower}}/finalizers
   verbs:
   - delete
   - get
@@ -66,11 +67,5 @@ rules:
   - update
   - patch
   - delete
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
+
 # +kubebuilder:scaffold:rules

@@ -1,0 +1,13 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: object-lease-operator-catalog
+  namespace: openshift-marketplace
+spec:
+  displayName: Object Lease Operator Catalog
+  image: 'ghcr.io/ullbergm/object-lease-operator-catalog:v0.0.1'
+  publisher: Magnus Ullberg
+  sourceType: grpc
+  updateStrategy:
+    registryPoll:
+      interval: 5m

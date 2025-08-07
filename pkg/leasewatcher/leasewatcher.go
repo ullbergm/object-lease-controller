@@ -8,11 +8,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	controller_runtime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logger "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -29,7 +30,8 @@ const (
 
 type LeaseWatcher struct {
 	client.Client
-	GVK schema.GroupVersionKind
+	GVK      schema.GroupVersionKind
+	Recorder record.EventRecorder
 }
 
 var (
@@ -74,7 +76,7 @@ var OnlyWithTTLAnnotation = predicate.Funcs{
 }
 
 func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Request) (controller_runtime.Result, error) {
-	log := log.FromContext(ctx).WithValues("GVK", r.GVK)
+	log := logger.FromContext(ctx).WithValues("GVK", r.GVK)
 	log.Info("reconciling lease")
 
 	obj := &unstructured.Unstructured{}
@@ -101,6 +103,11 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 			base := obj.DeepCopy()
 			obj.SetAnnotations(anns)
 			_ = r.Patch(ctx, obj, client.MergeFrom(base))
+
+			// Record the event
+			if r.Recorder != nil {
+				r.Recorder.Event(obj, "Normal", "LeaseAnnotationsCleaned", "Removed lease-related annotations as TTL is missing")
+			}
 		}
 		return controller_runtime.Result{}, nil
 	}
@@ -111,17 +118,34 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 	// Only set AnnExtendedAt if TTL is added after creation (i.e., object is not new and AnnExpireAt is missing)
 	ct := obj.GetCreationTimestamp()
 	isNew := ct.IsZero() || ct.UTC().Add(10*time.Second).After(now) // treat as new if just created (10s window)
-	if anns[AnnTTL] != "" && anns[AnnExpireAt] == "" && anns[AnnExtendedAt] == "" && !isNew {
-		log.Info("Lease TTL added after creation, setting extended-at", "name", obj.GetName())
-		anns[AnnExtendedAt] = now.Format(time.RFC3339)
-		r.updateAnnotations(ctx, obj, map[string]string{
-			AnnExtendedAt: anns[AnnExtendedAt],
-		})
-		start = now
+	if anns[AnnTTL] != "" && anns[AnnExpireAt] == "" && anns[AnnExtendedAt] == "" {
+		if !isNew {
+			log.Info("Lease TTL added after creation, setting extended-at", "name", obj.GetName())
+			anns[AnnExtendedAt] = now.Format(time.RFC3339)
+			r.updateAnnotations(ctx, obj, map[string]string{
+				AnnExtendedAt: anns[AnnExtendedAt],
+			})
+			start = now
+
+			// Record the event
+			if r.Recorder != nil {
+				r.Recorder.Event(obj, "Normal", "LeaseAdded", "Lease has been added to an existing object.")
+			}
+		} else {
+			// Record the event
+			if r.Recorder != nil {
+				r.Recorder.Event(obj, "Normal", "LeaseAdded", "Lease was added when the object was created.")
+			}
+		}
 	} else if ext, ok := anns[AnnExtendedAt]; ok && ext != "" {
 		t, err := time.Parse(time.RFC3339, ext)
 		if err == nil {
 			start = t.UTC()
+		}
+
+		// Record the event
+		if r.Recorder != nil {
+			r.Recorder.Event(obj, "Normal", "LeaseExtended", "Lease was extended.")
 		}
 	}
 	if start.IsZero() {
@@ -134,9 +158,15 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 
 	ttl, err := util.ParseFlexibleDuration(anns[AnnTTL])
 	if err != nil {
+		message := fmt.Sprintf("Invalid TTL: %v", err)
 		r.updateAnnotations(ctx, obj, map[string]string{
-			AnnStatus: fmt.Sprintf("Invalid TTL: %v", err),
+			AnnStatus: message,
 		})
+
+		// Record the event
+		if r.Recorder != nil {
+			r.Recorder.Event(obj, "Warning", "InvalidTTL", message)
+		}
 		return controller_runtime.Result{}, nil
 	}
 	expireAt := start.Add(ttl)
@@ -150,6 +180,13 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 
 		log.Info("Deleting object due to expired lease", "name", obj.GetName())
 		_ = r.Delete(ctx, obj)
+
+		// Record the event
+		if r.Recorder != nil {
+			r.Recorder.Event(obj, "Normal", "LeaseExpired", leaseStatus)
+		}
+
+		// Return empty result to stop further processing
 		return controller_runtime.Result{}, nil
 	}
 
@@ -177,7 +214,6 @@ func (r *LeaseWatcher) updateAnnotations(ctx context.Context, obj *unstructured.
 }
 
 func (r *LeaseWatcher) SetupWithManager(mgr manager.Manager) error {
-	// Log the GVK being watched
 	setupLog.Info("Setting up LeaseWatcher", "GVK", r.GVK)
 	return controller_runtime.NewControllerManagedBy(mgr).
 		For(&unstructured.Unstructured{Object: map[string]interface{}{

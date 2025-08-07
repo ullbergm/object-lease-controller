@@ -44,7 +44,7 @@ spec:
             - name: LEASE_GVK_VERSION
               value: {{ .Values.version | quote }}
             - name: LEASE_GVK_KIND
-              value: {{ .Values.kind | quote }}
+              value: {{ .Values.kind.singular | quote }}
             - name: LEASE_LEADER_ELECTION
               value: {{ .Values.leaderElection.enabled | quote }}
             - name: LEASE_LEADER_ELECTION_NAMESPACE
