@@ -35,6 +35,8 @@ curl -fLo /tmp/kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64"
 chmod +x /tmp/kind
 mv /tmp/kind /usr/local/bin/kind
 
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.1
+
 #docker network create -d=bridge --subnet=172.19.0.0/24 kind
 
 kind version

@@ -37,7 +37,7 @@ func TestParseFlexibleDuration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.input, func(t *testing.T) {
 			got, err := ParseFlexibleDuration(tt.input)
 			if tt.wantErr {

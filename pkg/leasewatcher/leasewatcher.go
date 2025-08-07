@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logger "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -76,7 +76,7 @@ var OnlyWithTTLAnnotation = predicate.Funcs{
 }
 
 func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Request) (controller_runtime.Result, error) {
-	log := log.FromContext(ctx).WithValues("GVK", r.GVK)
+	log := logger.FromContext(ctx).WithValues("GVK", r.GVK)
 	log.Info("reconciling lease")
 
 	obj := &unstructured.Unstructured{}
