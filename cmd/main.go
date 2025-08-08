@@ -1,6 +1,7 @@
 package main
 
 import (
+	"expvar"
 	"flag"
 	"fmt"
 	"net/http"
@@ -36,10 +37,11 @@ func main() {
 	flag.StringVar(&optInLabelKey, "opt-in-label-key", "", "The label key to opt-in namespaces")
 	flag.StringVar(&optInLabelValue, "opt-in-label-value", "", "The label value to opt-in namespaces")
 
-	var metricsAddr, probeAddr string
+	var metricsAddr, probeAddr, pprofAddr string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&pprofAddr, "pprof-bind-address", ":6060", "pprof address")
 
 	var enableLeaderElection bool
 	var leaderElectionNamespace string
@@ -119,7 +121,7 @@ func main() {
 		BindAddress: metricsAddr,
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgrOpts := ctrl.Options{
 		Scheme:                        scheme,
 		LeaderElection:                enableLeaderElection,
 		LeaderElectionID:              leaderElectionID,
@@ -127,7 +129,13 @@ func main() {
 		LeaderElectionReleaseOnCancel: true,
 		Metrics:                       metricsServerOptions,
 		HealthProbeBindAddress:        probeAddr,
-	})
+	}
+
+	if pprofAddr != "" {
+		mgrOpts.PprofBindAddress = pprofAddr
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		panic(err)
@@ -164,6 +172,15 @@ func main() {
 	if err := lw.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "GVK", gvk)
 		panic(err)
+	}
+
+	// Add metrics server expvar handler
+	if metricsAddr != "" {
+		setupLog.Info("Adding /debug/vars to metrics", "address", metricsAddr)
+		if err := mgr.AddMetricsServerExtraHandler("/debug/vars", expvar.Handler()); err != nil {
+			setupLog.Error(err, "unable to set up metrics server extra handler")
+			os.Exit(1)
+		}
 	}
 
 	// Health check: verify we can talk to the Kubernetes API
