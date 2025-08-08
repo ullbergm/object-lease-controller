@@ -9,9 +9,13 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -30,6 +34,9 @@ func main() {
 	flag.StringVar(&group, "group", "", "Kubernetes API group (e.g., \"apps\")")
 	flag.StringVar(&version, "version", "", "Kubernetes API version (e.g., \"v1\")")
 	flag.StringVar(&kind, "kind", "", "Kubernetes Kind (e.g., \"ConfigMap\")")
+
+	// Only cache/watch objects with this label. Set to empty string to disable filtering.
+	watchLabel := flag.String("watch-label", "lease.ullberg.us/enabled=true", "Only watch objects with this label selector key=value")
 
 	var metricsAddr, probeAddr string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
@@ -107,8 +114,26 @@ func main() {
 		BindAddress: metricsAddr,
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Cache label opt-in
+	cfg := ctrl.GetConfigOrDie()
+	var cacheOpts cache.Options
+	if *watchLabel != "" {
+		kv := strings.SplitN(*watchLabel, "=", 2)
+		if len(kv) != 2 || kv[0] == "" || kv[1] == "" {
+			fmt.Fprintf(os.Stderr, "bad --watch-label, expected key=value, got: %q\n", *watchLabel)
+			os.Exit(1)
+		}
+		sel := labels.SelectorFromSet(map[string]string{kv[0]: kv[1]})
+		target := &unstructured.Unstructured{}
+		target.SetGroupVersionKind(gvk)
+		cacheOpts.ByObject = map[client.Object]cache.ByObject{
+			target: {Label: sel},
+		}
+	}
+
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                        scheme,
+		Cache:                         cacheOpts,
 		LeaderElection:                enableLeaderElection,
 		LeaderElectionID:              leaderElectionID,
 		LeaderElectionNamespace:       leaderElectionNamespace,
@@ -134,20 +159,18 @@ func main() {
 		panic(err)
 	}
 
-	// Health check: verify we can talk to the Kubernetes API
+	// Health check: verify we can talk to the Kubernetes API without relying on cache
 	healthCheck := func(req *http.Request) error {
 		ctx := req.Context()
 
-		// Try to get all objects of the GVK that we are monitoring
 		list := &corev1.ConfigMapList{}
-		ns := "default" // Default namespace, can be overridden by env var or flag
+		ns := "default"
 		if nsEnv := os.Getenv("LEASE_NAMESPACE"); nsEnv != "" {
 			ns = nsEnv
 		}
-		if err := mgr.GetClient().List(ctx, list); err != nil {
+		if err := mgr.GetAPIReader().List(ctx, list, client.InNamespace(ns)); err != nil {
 			return fmt.Errorf("failed to list %s/%s/%s in namespace %s: %w", group, version, kind, ns, err)
 		}
-
 		return nil
 	}
 	if err := mgr.AddHealthzCheck("healthz", healthCheck); err != nil {
