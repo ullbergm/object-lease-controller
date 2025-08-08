@@ -28,6 +28,10 @@ const (
 	AnnStatus     = "object-lease-controller.ullberg.us/lease-status"
 )
 
+type clientProvider interface {
+	GetClient() client.Client
+}
+
 type LeaseWatcher struct {
 	client.Client
 	GVK       schema.GroupVersionKind
@@ -227,7 +231,7 @@ func (r *LeaseWatcher) SetupWithManager(mgr manager.Manager) error {
 }
 
 // handleNamespaceEvents listens for tracker events and triggers reconciliation for new namespaces
-func (r *LeaseWatcher) handleNamespaceEvents(mgr manager.Manager) {
+func (r *LeaseWatcher) handleNamespaceEvents(mgr clientProvider) {
 	for evt := range r.eventChan {
 		if evt.Change == util.NamespaceAdded {
 			k8sClient := mgr.GetClient()
