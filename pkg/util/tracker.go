@@ -1,6 +1,7 @@
 package util
 
 import (
+	"log"
 	"sync"
 )
 
@@ -83,7 +84,7 @@ func (t *NamespaceTracker) notifyListeners(event NamespaceChangeEvent) {
 		select {
 		case ch <- event:
 		default:
-			// skip if channel is full
+			log.Printf("NamespaceTracker: dropped event for namespace %q (change: %v) because listener channel is full", event.Namespace, event.Change)
 		}
 	}
 }

@@ -249,7 +249,12 @@ func (r *LeaseWatcher) handleNamespaceEvents(mgr clientProvider) {
 							req := controller_runtime.Request{
 								NamespacedName: client.ObjectKeyFromObject(&obj),
 							}
-							go r.Reconcile(context.Background(), req)
+							go func(req controller_runtime.Request) {
+								ctx := context.Background()
+								if _, err := r.Reconcile(ctx, req); err != nil {
+									logger.FromContext(ctx).Error(err, "Reconcile failed", "object", req.NamespacedName)
+								}
+							}(req)
 						}
 					}
 				}
