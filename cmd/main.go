@@ -62,6 +62,13 @@ func main() {
 	if kind == "" {
 		kind = os.Getenv("LEASE_GVK_KIND")
 	}
+	if optInLabelKey == "" {
+		optInLabelKey = os.Getenv("LEASE_OPT_IN_LABEL_KEY")
+	}
+	if optInLabelValue == "" {
+		optInLabelValue = os.Getenv("LEASE_OPT_IN_LABEL_VALUE")
+	}
+
 	if !enableLeaderElection {
 		if val := os.Getenv("LEASE_LEADER_ELECTION"); val != "" {
 			var err error
@@ -126,28 +133,31 @@ func main() {
 		panic(err)
 	}
 
-	tracker := util.NewNamespaceTracker()
-
-	nw := &controllers.NamespaceReconciler{
-		Client:     mgr.GetClient(),
-		Recorder:   mgr.GetEventRecorderFor(leaderElectionID),
-		LabelKey:   optInLabelKey,
-		LabelValue: optInLabelValue,
-		Tracker:    tracker,
-	}
-
-	// Register NamespaceReconciler with the manager
-	if err := nw.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "GVK", gvk)
-		panic(err)
-	}
-
 	// Create a LeaseWatcher for the specified GVK
 	lw := &controllers.LeaseWatcher{
 		Client:   mgr.GetClient(),
 		GVK:      gvk,
 		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
-		Tracker:  tracker,
+	}
+
+	if optInLabelKey != "" && optInLabelValue != "" {
+		tracker := util.NewNamespaceTracker()
+
+		nw := &controllers.NamespaceReconciler{
+			Client:     mgr.GetClient(),
+			Recorder:   mgr.GetEventRecorderFor(leaderElectionID),
+			LabelKey:   optInLabelKey,
+			LabelValue: optInLabelValue,
+			Tracker:    tracker,
+		}
+
+		// Register NamespaceReconciler with the manager
+		if err := nw.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "GVK", gvk)
+			panic(err)
+		}
+
+		lw.Tracker = tracker
 	}
 
 	// Register the LeaseWatcher with the manager

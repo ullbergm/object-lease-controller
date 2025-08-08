@@ -99,8 +99,6 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 			log.Info("namespace not tracked, skipping", "namespace", req.Namespace)
 			return controller_runtime.Result{}, nil
 		}
-	} else {
-		log.Info("no namespace tracker configured, processing all namespaces")
 	}
 
 	obj := &unstructured.Unstructured{}
