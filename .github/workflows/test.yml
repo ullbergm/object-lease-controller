@@ -27,13 +27,14 @@ jobs:
           go mod tidy
           go vet ./...
           make test
+          gotestsum --junitfile=tmp/test-results/junit.xml --format=standard-verbose -- -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.txt
+          path: coverage.out
 
       - name: Upload coverage report
         if: always()
@@ -41,3 +42,14 @@ jobs:
         with:
           name: junit.xml
           path: tmp/test-results/junit.xml
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+            token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

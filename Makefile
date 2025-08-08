@@ -13,7 +13,7 @@ vet:
 	go vet ./...
 
 test: tidy fmt vet
-	go test ./... -timeout 30s
+	go test ./... -race -coverprofile=coverage.out
 
 build: tidy fmt vet test
 	go build -o bin/lease-controller ./cmd/main.go
