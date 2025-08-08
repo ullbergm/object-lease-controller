@@ -16,7 +16,8 @@ import (
 
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"object-lease-controller/pkg/leasewatcher"
+	controllers "object-lease-controller/pkg/controllers"
+	"object-lease-controller/pkg/util"
 )
 
 var (
@@ -27,9 +28,13 @@ func main() {
 	ctrl.SetLogger(zap.New())
 
 	var group, version, kind string
+	var optInLabelKey, optInLabelValue string
 	flag.StringVar(&group, "group", "", "Kubernetes API group (e.g., \"apps\")")
 	flag.StringVar(&version, "version", "", "Kubernetes API version (e.g., \"v1\")")
 	flag.StringVar(&kind, "kind", "", "Kubernetes Kind (e.g., \"ConfigMap\")")
+
+	flag.StringVar(&optInLabelKey, "opt-in-label-key", "", "The label key to opt-in namespaces")
+	flag.StringVar(&optInLabelValue, "opt-in-label-value", "", "The label value to opt-in namespaces")
 
 	var metricsAddr, probeAddr string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
@@ -121,11 +126,28 @@ func main() {
 		panic(err)
 	}
 
+	tracker := util.NewNamespaceTracker()
+
+	nw := &controllers.NamespaceReconciler{
+		Client:     mgr.GetClient(),
+		Recorder:   mgr.GetEventRecorderFor(leaderElectionID),
+		LabelKey:   optInLabelKey,
+		LabelValue: optInLabelValue,
+		Tracker:    tracker,
+	}
+
+	// Register NamespaceReconciler with the manager
+	if err := nw.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "GVK", gvk)
+		panic(err)
+	}
+
 	// Create a LeaseWatcher for the specified GVK
-	lw := &leasewatcher.LeaseWatcher{
+	lw := &controllers.LeaseWatcher{
 		Client:   mgr.GetClient(),
 		GVK:      gvk,
 		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
+		Tracker:  tracker,
 	}
 
 	// Register the LeaseWatcher with the manager

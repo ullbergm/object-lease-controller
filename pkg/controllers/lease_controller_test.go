@@ -1,4 +1,4 @@
-package leasewatcher
+package controllers
 
 import (
 	"reflect"
@@ -16,24 +16,39 @@ func makeObj(anns map[string]string) *unstructured.Unstructured {
 }
 
 func TestLeaseRelevantAnns(t *testing.T) {
+	// TTL only
 	u := makeObj(map[string]string{
-		AnnTTL:        "1h",
-		AnnExtendedAt: "foo",
-		"other":       "ignore",
+		AnnTTL:  "1h",
+		"other": "ignore",
 	})
 	got := leaseRelevantAnns(u)
 	want := map[string]string{
-		AnnTTL:        "1h",
-		AnnExtendedAt: "foo",
+		AnnTTL: "1h",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("leaseRelevantAnns = %v, want %v", got, want)
 	}
 
-	u2 := makeObj(map[string]string{"foo": "bar"})
+	// TTL + lease-start both included
+	u2 := makeObj(map[string]string{
+		AnnTTL:        "30m",
+		AnnLeaseStart: "2025-01-01T00:00:00Z",
+		"x":           "y",
+	})
 	got2 := leaseRelevantAnns(u2)
-	if len(got2) != 0 {
-		t.Errorf("leaseRelevantAnns(no anns) = %v, want empty", got2)
+	want2 := map[string]string{
+		AnnTTL:        "30m",
+		AnnLeaseStart: "2025-01-01T00:00:00Z",
+	}
+	if !reflect.DeepEqual(got2, want2) {
+		t.Errorf("leaseRelevantAnns = %v, want %v", got2, want2)
+	}
+
+	// No relevant annotations
+	u3 := makeObj(map[string]string{"foo": "bar"})
+	got3 := leaseRelevantAnns(u3)
+	if len(got3) != 0 {
+		t.Errorf("leaseRelevantAnns(no anns) = %v, want empty", got3)
 	}
 }
 
@@ -44,6 +59,7 @@ func TestOnlyWithTTLAnnotation_Create(t *testing.T) {
 		want bool
 	}{
 		{"has TTL", map[string]string{AnnTTL: "5m"}, true},
+		{"has lease-start but no TTL", map[string]string{AnnLeaseStart: "2025-01-01T00:00:00Z"}, false},
 		{"no TTL", map[string]string{"foo": "bar"}, false},
 	}
 
@@ -57,10 +73,12 @@ func TestOnlyWithTTLAnnotation_Create(t *testing.T) {
 }
 
 func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
-	baseOld := makeObj(map[string]string{AnnTTL: "1h"})
-	baseNewSame := makeObj(map[string]string{AnnTTL: "1h", "other": "x"})
-	changedTTL := makeObj(map[string]string{AnnTTL: "2h"})
-	addExtended := makeObj(map[string]string{AnnTTL: "1h", AnnExtendedAt: "now"})
+	baseOld := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
+	baseNewSame := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z", "other": "x"})
+	changedTTL := makeObj(map[string]string{AnnTTL: "2h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
+	changedLeaseStart := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T01:00:00Z"})
+	leaseStartAdded := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
+	leaseStartRemoved := makeObj(map[string]string{AnnTTL: "1h"})
 	noAnns := makeObj(nil)
 
 	tests := []struct {
@@ -70,7 +88,9 @@ func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
 		want   bool
 	}{
 		{"TTL changed", baseOld, changedTTL, true},
-		{"ExtendedAt added", baseOld, addExtended, true},
+		{"LeaseStart changed", baseOld, changedLeaseStart, true},
+		{"LeaseStart added", leaseStartRemoved, leaseStartAdded, true},
+		{"LeaseStart removed", baseOld, leaseStartRemoved, true},
 		{"Untracked annotation changed", baseOld, baseNewSame, false},
 		{"TTL removed", baseOld, noAnns, true},
 		{"Neither has TTL", noAnns, noAnns, false},
