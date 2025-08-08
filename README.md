@@ -76,20 +76,41 @@ You can specify the time in hours, minutes, days, weeks, etc.
 | `3h`    | 3 hours          |
 | `10s`   | 10 seconds       |
 
-#### object-lease-controller.ullberg.us/extended-at
+### object-lease-controller.ullberg.us/lease-start
 
-If you set this value, the lease is calculated from this time rather from the creation time.
+RFC3339 UTC timestamp. Single source of truth for when the lease started.
+
+Controller behavior:
+
+* If `ttl` exists and `lease-start` is missing or invalid, the controller sets `lease-start` to now.
+* To extend a lease, delete `lease-start`. The controller sets it to now on the next reconcile.
+* You can set `lease-start` explicitly to backdate or align with an external clock.
+
+Examples:
+
 ```bash
-kubectl annotate pod test object-lease-controller.ullberg.us/extended-at=2026-06-11T20:48:11Z
+# Extend now by resetting the start
+kubectl annotate pod test object-lease-controller.ullberg.us/lease-start- --overwrite
+
+# Set a specific start time
+kubectl annotate pod test object-lease-controller.ullberg.us/lease-start=2025-01-01T12:00:00Z --overwrite
 ```
 
-#### object-lease-controller.ullberg.us/expire-at
+### object-lease-controller.ullberg.us/expire-at
 
-This annotation is updated by the controller to show when the object will expire. This is meant to be used by systems that display information about objects in the environment.
+Set by the controller. RFC3339 UTC timestamp for when the object will expire. Safe for dashboards to read.
 
-#### object-lease-controller.ullberg.us/lease-status
+### object-lease-controller.ullberg.us/lease-status
 
-This annotation is updated by the controller to indicate status or issues with the annotations. This is meant to be human readable information.
+Set by the controller. Human readable status or validation errors.
+
+### Removing TTL
+
+Remove `ttl` to stop lease management. The controller clears `lease-start`, `expire-at`, and `lease-status`.
+
+```bash
+kubectl annotate pod test object-lease-controller.ullberg.us/ttl-
+```
 
 ## Example Use Cases
 - Automatically manage leases for custom resources (e.g., Applications, Databases, Services)
@@ -112,10 +133,11 @@ cd object-lease-operator
 make run
 ```
 
-## Optimizations / Features
+## Behavior summary
 
-Here are some design decisions and optimizations:
-- Controller instances are only managing a single GVK, providing separation of duty and scaling.
-- Controllers use dedicated ServiceAccounts with permissions limited to the GVK they are managing.
-- Reconcile loop knows when the object is going to expire and will not read the status from the object until it has expired or it has been updated.
-- TTL can be added after the object has been created, in that case the expiration is based on the time the TTL annotation was added, rather than the object creation time.
+* Add `ttl` to start management. Controller sets `lease-start` if missing.
+* Delete `lease-start` to extend from now.
+* Optionally set `lease-start` to a specific RFC3339 UTC time.
+* Delete `ttl` to stop management. Controller removes lease annotations.
+* Reconcile filters only react to changes in `ttl` and `lease-start`.
+* The controller computes `expire-at` from `lease-start + ttl` and requeues until expiry.
