@@ -181,9 +181,11 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 			AnnStatus:   leaseStatus,
 		})
 		log.Info("Deleting object due to expired lease", "name", obj.GetName())
-		_ = r.Delete(ctx, obj)
 		if r.Recorder != nil {
 			r.Recorder.Event(obj, "Normal", "LeaseExpired", leaseStatus)
+		}
+		if err := util.DeleteWithUIDPrecondition(ctx, r.Client, obj); client.IgnoreNotFound(err) != nil {
+			return controller_runtime.Result{}, err
 		}
 		return controller_runtime.Result{}, nil
 	}
