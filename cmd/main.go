@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -129,6 +130,9 @@ func main() {
 		LeaderElectionReleaseOnCancel: true,
 		Metrics:                       metricsServerOptions,
 		HealthProbeBindAddress:        probeAddr,
+		Cache: cache.Options{
+			DefaultTransform: cache.TransformStripManagedFields(),
+		},
 	}
 
 	if pprofAddr != "" {
