@@ -10,10 +10,13 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -100,7 +103,7 @@ func main() {
 	}
 
 	if version == "" || kind == "" {
-		fmt.Println("Usage: lease-manager -group=GROUP -version=VERSION -kind=KIND [--leader-elect] [--leader-elect-namespace=NAMESPACE]")
+		fmt.Println("Usage: lease-controller -group=GROUP -version=VERSION -kind=KIND [--leader-elect] [--leader-elect-namespace=NAMESPACE]")
 		fmt.Println("Or set LEASE_GVK_GROUP, LEASE_GVK_VERSION, LEASE_GVK_KIND, LEASE_LEADER_ELECTION env vars")
 		os.Exit(1)
 	}
@@ -187,23 +190,11 @@ func main() {
 		}
 	}
 
-	// Health check: verify we can talk to the Kubernetes API
 	healthCheck := func(req *http.Request) error {
-		ctx := req.Context()
-
-		// Try to get all objects of the GVK that we are monitoring
-		list := &corev1.ConfigMapList{}
-		ns := "default" // Default namespace, can be overridden by env var or flag
-		if nsEnv := os.Getenv("LEASE_NAMESPACE"); nsEnv != "" {
-			ns = nsEnv
-		}
-		if err := mgr.GetClient().List(ctx, list); err != nil {
-			return fmt.Errorf("failed to list %s/%s/%s in namespace %s: %w", group, version, kind, ns, err)
-		}
-
-		return nil
+		return healthCheck(req, mgr, gvk)
 	}
-	if err := mgr.AddHealthzCheck("healthz", healthCheck); err != nil {
+
+	if err := mgr.AddHealthzCheck("gvk", healthCheck); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
@@ -225,4 +216,40 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		panic(err)
 	}
+}
+
+// Health check: confirm GVK is discoverable and listable with minimal load
+func healthCheck(req *http.Request, mgr ctrl.Manager, gvk schema.GroupVersionKind) error {
+	ctx := req.Context()
+
+	// Resolve scope from RESTMapper
+	mapping, err := mgr.GetRESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return fmt.Errorf("rest mapping failed for %s: %w", gvk.String(), err)
+	}
+	namespaced := mapping.Scope.Name() == apimeta.RESTScopeNameNamespace
+
+	// Build an unstructured list for the configured GVK
+	ul := &unstructured.UnstructuredList{}
+	ul.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   gvk.Group,
+		Version: gvk.Version,
+		Kind:    gvk.Kind + "List",
+	})
+
+	// Cheap probe: limit to 1 item and namespace only if namespaced
+	var opts []client.ListOption
+	opts = append(opts, client.Limit(1))
+	if namespaced {
+		ns := "default"
+		if nsEnv := os.Getenv("LEASE_NAMESPACE"); nsEnv != "" {
+			ns = nsEnv
+		}
+		opts = append(opts, client.InNamespace(ns))
+	}
+
+	if err := mgr.GetAPIReader().List(ctx, ul, opts...); err != nil {
+		return fmt.Errorf("list probe failed for %s: %w", gvk.String(), err)
+	}
+	return nil
 }
