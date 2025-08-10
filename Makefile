@@ -1,4 +1,5 @@
 IMG ?= quay.io/ullbergm/object-lease-controller:latest
+PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:latest
 
 run: build
 	./bin/lease-controller -group startpunkt.ullberg.us -kind Application -version v1alpha2 -leader-elect -leader-elect-namespace default -opt-in-label-key "object-lease-controller.ullberg.us/enabled" -opt-in-label-value true
@@ -24,4 +25,14 @@ docker-build: build
 docker-push:
 	docker push $(IMG)
 
-.PHONY: run tidy fmt vet test build docker-build docker-push
+# Console plugin
+plugin-build:
+	docker build -t $(PLUGIN_IMG) console-plugin/object-lease-console-plugin
+
+plugin-push: plugin-build
+	docker push $(PLUGIN_IMG)
+
+deploy-operator-and-plugin:
+	kubectl apply -k object-lease-operator/config/default
+
+.PHONY: run tidy fmt vet test build docker-build docker-push plugin-build plugin-push deploy-operator-and-plugin
