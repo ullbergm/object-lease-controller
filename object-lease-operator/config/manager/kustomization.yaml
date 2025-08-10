@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/ullbergm/object-lease-operator-controller
-  newTag: v0.0.1
+  newTag: v0.2.0

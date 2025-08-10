@@ -23,14 +23,14 @@ metadata:
     capabilities: Basic Install
     categories: Management
     certified: "false"
-    containerImage: ghcr.io/ullbergm/object-lease-operator-controller:v0.0.1
+    containerImage: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.0
     createdAt: "2025-08-07T17:41:52Z"
     description: Operator to manage object leases in Kubernetes.
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: helm.sdk.operatorframework.io/v1
     repository: https://github.com/ullbergm/object-lease-controller
     support: Magnus Ullberg <magnus@ullberg.us>
-  name: object-lease-operator.v0.0.1
+  name: object-lease-operator.v0.2.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -212,7 +212,7 @@ spec:
                 - --leader-elect
                 - --leader-election-id=object-lease-operator
                 - --health-probe-bind-address=:8081
-                image: ghcr.io/ullbergm/object-lease-operator-controller:v0.0.1
+                image: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.0
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -302,4 +302,4 @@ spec:
   minKubeVersion: 1.13.0
   provider:
     name: Magnus Ullberg
-  version: 0.0.1
+  version: 0.2.0
