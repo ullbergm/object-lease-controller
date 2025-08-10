@@ -35,6 +35,10 @@ metadata:
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
+    required:
+      - name: servicemonitors.monitoring.coreos.com
+        kind: ServiceMonitor
+        version: v1
     owned:
     - kind: LeaseController
       name: leasecontrollers.object-lease-controller.ullberg.us

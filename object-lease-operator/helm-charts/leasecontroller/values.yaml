@@ -14,3 +14,12 @@ kind:
 
 leaderElection:
   enabled: true
+
+metrics:
+  enabled: true
+  port: 8080
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}

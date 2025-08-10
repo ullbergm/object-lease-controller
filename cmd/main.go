@@ -22,6 +22,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	controllers "object-lease-controller/pkg/controllers"
+	ometrics "object-lease-controller/pkg/metrics"
 	"object-lease-controller/pkg/util"
 )
 
@@ -163,6 +164,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		GVK:      gvk,
 		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
+		Metrics:  ometrics.NewLeaseMetrics(gvk),
 	}
 
 	if optInLabelKey != "" && optInLabelValue != "" {
