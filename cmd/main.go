@@ -25,6 +25,14 @@ import (
 	"object-lease-controller/pkg/util"
 )
 
+// Lease annotation keys
+const (
+	AnnTTL        = "object-lease-controller.ullberg.us/ttl"
+	AnnLeaseStart = "object-lease-controller.ullberg.us/lease-start" // RFC3339 UTC
+	AnnExpireAt   = "object-lease-controller.ullberg.us/expire-at"
+	AnnStatus     = "object-lease-controller.ullberg.us/lease-status"
+)
+
 var (
 	setupLog = ctrl.Log.WithName("setup")
 )
@@ -134,7 +142,9 @@ func main() {
 		Metrics:                       metricsServerOptions,
 		HealthProbeBindAddress:        probeAddr,
 		Cache: cache.Options{
-			DefaultTransform: cache.TransformStripManagedFields(),
+			DefaultTransform: util.MinimalObjectTransform(
+				AnnTTL, AnnLeaseStart, AnnExpireAt, AnnStatus,
+			),
 		},
 	}
 

@@ -20,24 +20,24 @@ import (
 	"object-lease-controller/pkg/util"
 )
 
-// Lease annotation keys
-const (
-	AnnTTL        = "object-lease-controller.ullberg.us/ttl"
-	AnnLeaseStart = "object-lease-controller.ullberg.us/lease-start" // RFC3339 UTC
-	AnnExpireAt   = "object-lease-controller.ullberg.us/expire-at"
-	AnnStatus     = "object-lease-controller.ullberg.us/lease-status"
-)
-
 type clientProvider interface {
 	GetClient() client.Client
 }
 
 type LeaseWatcher struct {
 	client.Client
-	GVK       schema.GroupVersionKind
-	Tracker   *util.NamespaceTracker
-	Recorder  record.EventRecorder
-	eventChan chan util.NamespaceChangeEvent
+	GVK         schema.GroupVersionKind
+	Tracker     *util.NamespaceTracker
+	Recorder    record.EventRecorder
+	eventChan   chan util.NamespaceChangeEvent
+	Annotations Annotations
+}
+
+type Annotations struct {
+	TTL        string
+	LeaseStart string
+	ExpireAt   string
+	Status     string
 }
 
 var (
@@ -45,9 +45,9 @@ var (
 )
 
 // Only trigger reconcile when relevant annotations change
-func leaseRelevantAnns(u *unstructured.Unstructured) map[string]string {
+func leaseRelevantAnns(u *unstructured.Unstructured, annotations Annotations) map[string]string {
 	anns := u.GetAnnotations()
-	keys := []string{AnnTTL, AnnLeaseStart}
+	keys := []string{annotations.TTL, annotations.LeaseStart}
 	result := map[string]string{}
 	for _, k := range keys {
 		if v, ok := anns[k]; ok {
@@ -57,28 +57,30 @@ func leaseRelevantAnns(u *unstructured.Unstructured) map[string]string {
 	return result
 }
 
-var OnlyWithTTLAnnotation = predicate.Funcs{
-	CreateFunc: func(e event.CreateEvent) bool {
-		obj, ok := e.Object.(*unstructured.Unstructured)
-		if !ok {
-			return false
-		}
-		anns := obj.GetAnnotations()
-		_, has := anns[AnnTTL]
-		return has
-	},
-	UpdateFunc: func(e event.UpdateEvent) bool {
-		oldObj, ok1 := e.ObjectOld.(*unstructured.Unstructured)
-		newObj, ok2 := e.ObjectNew.(*unstructured.Unstructured)
-		if !ok1 || !ok2 {
-			return false
-		}
-		old := leaseRelevantAnns(oldObj)
-		new := leaseRelevantAnns(newObj)
-		return !reflect.DeepEqual(old, new)
-	},
-	DeleteFunc:  func(e event.DeleteEvent) bool { return false },
-	GenericFunc: func(e event.GenericEvent) bool { return false },
+func (r *LeaseWatcher) onlyWithTTLAnnotation() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			obj, ok := e.Object.(*unstructured.Unstructured)
+			if !ok {
+				return false
+			}
+			anns := obj.GetAnnotations()
+			_, has := anns[r.Annotations.TTL]
+			return has
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldObj, ok1 := e.ObjectOld.(*unstructured.Unstructured)
+			newObj, ok2 := e.ObjectNew.(*unstructured.Unstructured)
+			if !ok1 || !ok2 {
+				return false
+			}
+			old := leaseRelevantAnns(oldObj, r.Annotations)
+			new := leaseRelevantAnns(newObj, r.Annotations)
+			return !reflect.DeepEqual(old, new)
+		},
+		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
 }
 
 func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Request) (controller_runtime.Result, error) {
@@ -118,9 +120,9 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 	}
 
 	// If TTL missing, clean up all lease annotations and return
-	if anns[AnnTTL] == "" {
+	if anns[r.Annotations.TTL] == "" {
 		cleaned := false
-		for _, k := range []string{AnnExpireAt, AnnStatus, AnnLeaseStart} {
+		for _, k := range []string{r.Annotations.ExpireAt, r.Annotations.Status, r.Annotations.LeaseStart} {
 			if _, exists := anns[k]; exists {
 				delete(anns, k)
 				cleaned = true
@@ -142,30 +144,30 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 
 	// Ensure lease-start exists. If missing or invalid, set to now.
 	start := now
-	if v, ok := anns[AnnLeaseStart]; ok && v != "" {
+	if v, ok := anns[r.Annotations.LeaseStart]; ok && v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			start = t.UTC()
 		} else {
 			// reset invalid value
-			anns[AnnLeaseStart] = now.Format(time.RFC3339)
-			r.updateAnnotations(ctx, obj, map[string]string{AnnLeaseStart: anns[AnnLeaseStart]})
+			anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
+			r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
 			if r.Recorder != nil {
 				r.Recorder.Event(obj, "Warning", "LeaseStartReset", "Invalid lease-start, reset to now")
 			}
 		}
 	} else {
-		anns[AnnLeaseStart] = now.Format(time.RFC3339)
-		r.updateAnnotations(ctx, obj, map[string]string{AnnLeaseStart: anns[AnnLeaseStart]})
+		anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
+		r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
 		if r.Recorder != nil {
 			r.Recorder.Event(obj, "Normal", "LeaseStarted", "Lease started")
 		}
 		start = now
 	}
 
-	ttl, err := util.ParseFlexibleDuration(anns[AnnTTL])
+	ttl, err := util.ParseFlexibleDuration(anns[r.Annotations.TTL])
 	if err != nil {
 		message := fmt.Sprintf("Invalid TTL: %v", err)
-		r.updateAnnotations(ctx, obj, map[string]string{AnnStatus: message})
+		r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.Status: message})
 		if r.Recorder != nil {
 			r.Recorder.Event(obj, "Warning", "InvalidTTL", message)
 		}
@@ -177,8 +179,8 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 	if now.After(expireAt) {
 		leaseStatus := "Lease expired. Deleting object."
 		r.updateAnnotations(ctx, obj, map[string]string{
-			AnnExpireAt: expireAt.Format(time.RFC3339),
-			AnnStatus:   leaseStatus,
+			r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
+			r.Annotations.Status:   leaseStatus,
 		})
 		log.Info("Deleting object due to expired lease", "name", obj.GetName())
 		if r.Recorder != nil {
@@ -192,8 +194,8 @@ func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Req
 
 	leaseStatus := fmt.Sprintf("Lease active. Expires at %s UTC.", expireAt.Format(time.RFC3339))
 	r.updateAnnotations(ctx, obj, map[string]string{
-		AnnExpireAt: expireAt.Format(time.RFC3339),
-		AnnStatus:   leaseStatus,
+		r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
+		r.Annotations.Status:   leaseStatus,
 	})
 
 	return controller_runtime.Result{RequeueAfter: expireAt.Sub(now)}, nil
@@ -226,7 +228,7 @@ func (r *LeaseWatcher) SetupWithManager(mgr manager.Manager) error {
 		For(&unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": fmt.Sprintf("%s/%s", r.GVK.Group, r.GVK.Version),
 			"kind":       r.GVK.Kind,
-		}}, builder.WithPredicates(OnlyWithTTLAnnotation)).
+		}}, builder.WithPredicates(r.onlyWithTTLAnnotation())).
 		Complete(r)
 }
 
@@ -247,7 +249,7 @@ func (r *LeaseWatcher) handleNamespaceEvents(mgr clientProvider) {
 				for _, obj := range list.Items {
 					anns := obj.GetAnnotations()
 					if anns != nil {
-						if _, has := anns[AnnTTL]; has {
+						if _, has := anns[r.Annotations.TTL]; has {
 							req := controller_runtime.Request{
 								NamespacedName: client.ObjectKeyFromObject(&obj),
 							}

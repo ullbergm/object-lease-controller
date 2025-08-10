@@ -21,6 +21,14 @@ import (
 )
 
 // helpers
+func defaultAnn() Annotations {
+	return Annotations{
+		TTL:        "object-lease-controller.ullberg.us/ttl",
+		LeaseStart: "object-lease-controller.ullberg.us/lease-start",
+		ExpireAt:   "object-lease-controller.ullberg.us/expire-at",
+		Status:     "object-lease-controller.ullberg.us/lease-status",
+	}
+}
 
 type stubMgr struct{ c client.Client }
 
@@ -49,7 +57,7 @@ func newWatcher(t *testing.T, gvk schema.GroupVersionKind, objs ...client.Object
 	}, &unstructured.UnstructuredList{})
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
-	return &LeaseWatcher{Client: cl, GVK: gvk}, cl, scheme
+	return &LeaseWatcher{Client: cl, GVK: gvk, Annotations: defaultAnn()}, cl, scheme
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
@@ -77,66 +85,63 @@ func get(t *testing.T, cl client.Client, gvk schema.GroupVersionKind, ns, name s
 // existing predicate tests retained
 
 func TestLeaseRelevantAnns(t *testing.T) {
-	u := makeObj(map[string]string{
-		AnnTTL:  "1h",
-		"other": "ignore",
-	})
-	got := leaseRelevantAnns(u)
-	want := map[string]string{
-		AnnTTL: "1h",
-	}
+	a := defaultAnn()
+	u := makeObj(map[string]string{a.TTL: "1h", "other": "ignore"})
+	got := leaseRelevantAnns(u, a)
+	want := map[string]string{a.TTL: "1h"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("leaseRelevantAnns = %v, want %v", got, want)
 	}
 
-	u2 := makeObj(map[string]string{
-		AnnTTL:        "30m",
-		AnnLeaseStart: "2025-01-01T00:00:00Z",
-		"x":           "y",
-	})
-	got2 := leaseRelevantAnns(u2)
-	want2 := map[string]string{
-		AnnTTL:        "30m",
-		AnnLeaseStart: "2025-01-01T00:00:00Z",
-	}
+	u2 := makeObj(map[string]string{a.TTL: "30m", a.LeaseStart: "2025-01-01T00:00:00Z", "x": "y"})
+	got2 := leaseRelevantAnns(u2, a)
+	want2 := map[string]string{a.TTL: "30m", a.LeaseStart: "2025-01-01T00:00:00Z"}
 	if !reflect.DeepEqual(got2, want2) {
 		t.Errorf("leaseRelevantAnns = %v, want %v", got2, want2)
 	}
 
 	u3 := makeObj(map[string]string{"foo": "bar"})
-	got3 := leaseRelevantAnns(u3)
+	got3 := leaseRelevantAnns(u3, a)
 	if len(got3) != 0 {
 		t.Errorf("leaseRelevantAnns(no anns) = %v, want empty", got3)
 	}
 }
 
 func TestOnlyWithTTLAnnotation_Create(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+	a := r.Annotations
 	tests := []struct {
 		name string
 		anns map[string]string
 		want bool
 	}{
-		{"has TTL", map[string]string{AnnTTL: "5m"}, true},
-		{"has lease-start but no TTL", map[string]string{AnnLeaseStart: "2025-01-01T00:00:00Z"}, false},
+		{"has TTL", map[string]string{a.TTL: "5m"}, true},
+		{"has lease-start but no TTL", map[string]string{a.LeaseStart: "2025-01-01T00:00:00Z"}, false},
 		{"no TTL", map[string]string{"foo": "bar"}, false},
 	}
 
 	for _, tt := range tests {
 		u := makeObj(tt.anns)
 		ev := event.CreateEvent{Object: u}
-		if got := OnlyWithTTLAnnotation.CreateFunc(ev); got != tt.want {
+		if got := pred.CreateFunc(ev); got != tt.want {
 			t.Errorf("CreateFunc(%q) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
 
 func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
-	baseOld := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
-	baseNewSame := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z", "other": "x"})
-	changedTTL := makeObj(map[string]string{AnnTTL: "2h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
-	changedLeaseStart := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T01:00:00Z"})
-	leaseStartAdded := makeObj(map[string]string{AnnTTL: "1h", AnnLeaseStart: "2025-01-01T00:00:00Z"})
-	leaseStartRemoved := makeObj(map[string]string{AnnTTL: "1h"})
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+	a := r.Annotations
+	baseOld := makeObj(map[string]string{a.TTL: "1h", a.LeaseStart: "2025-01-01T00:00:00Z"})
+	baseNewSame := makeObj(map[string]string{a.TTL: "1h", a.LeaseStart: "2025-01-01T00:00:00Z", "other": "x"})
+	changedTTL := makeObj(map[string]string{a.TTL: "2h", a.LeaseStart: "2025-01-01T00:00:00Z"})
+	changedLeaseStart := makeObj(map[string]string{a.TTL: "1h", a.LeaseStart: "2025-01-01T01:00:00Z"})
+	leaseStartAdded := makeObj(map[string]string{a.TTL: "1h", a.LeaseStart: "2025-01-01T00:00:00Z"})
+	leaseStartRemoved := makeObj(map[string]string{a.TTL: "1h"})
 	noAnns := makeObj(nil)
 
 	tests := []struct {
@@ -156,7 +161,7 @@ func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		ev := event.UpdateEvent{ObjectOld: tt.oldObj, ObjectNew: tt.newObj}
-		if got := OnlyWithTTLAnnotation.UpdateFunc(ev); got != tt.want {
+		if got := pred.UpdateFunc(ev); got != tt.want {
 			t.Errorf("UpdateFunc(%s) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
@@ -166,17 +171,19 @@ func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
 		ObjectOld: &corev1.Pod{},
 		ObjectNew: &corev1.Pod{},
 	}
-	if OnlyWithTTLAnnotation.UpdateFunc(evBad) {
+	if pred.UpdateFunc(evBad) {
 		t.Errorf("UpdateFunc(wrong types) = true, want false")
 	}
-
 }
 
 func TestOnlyWithTTLAnnotation_Delete_Generic(t *testing.T) {
-	if OnlyWithTTLAnnotation.DeleteFunc(event.DeleteEvent{}) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+	if pred.DeleteFunc(event.DeleteEvent{}) {
 		t.Error("DeleteFunc always false")
 	}
-	if OnlyWithTTLAnnotation.GenericFunc(event.GenericEvent{}) {
+	if pred.GenericFunc(event.GenericEvent{}) {
 		t.Error("GenericFunc always false")
 	}
 }
@@ -190,8 +197,8 @@ func TestReconcile_UpdatesExpireAtWhenTTLChanges(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm1")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1h",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "1h",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -202,13 +209,13 @@ func TestReconcile_UpdatesExpireAtWhenTTLChanges(t *testing.T) {
 	}
 	got := get(t, cl, gvk, "default", "cm1")
 	exp1 := start.Add(1 * time.Hour).Format(time.RFC3339)
-	if got.GetAnnotations()[AnnExpireAt] != exp1 {
-		t.Fatalf("expire-at after TTL=1h = %q, want %q", got.GetAnnotations()[AnnExpireAt], exp1)
+	if got.GetAnnotations()[defaultAnn().ExpireAt] != exp1 {
+		t.Fatalf("expire-at after TTL=1h = %q, want %q", got.GetAnnotations()[defaultAnn().ExpireAt], exp1)
 	}
 
 	// change TTL to 2h
 	anns := got.GetAnnotations()
-	anns[AnnTTL] = "2h"
+	anns[defaultAnn().TTL] = "2h"
 	got.SetAnnotations(anns)
 	if err := cl.Update(ctx, got); err != nil {
 		t.Fatalf("update error: %v", err)
@@ -220,8 +227,8 @@ func TestReconcile_UpdatesExpireAtWhenTTLChanges(t *testing.T) {
 	}
 	got2 := get(t, cl, gvk, "default", "cm1")
 	exp2 := start.Add(2 * time.Hour).Format(time.RFC3339)
-	if got2.GetAnnotations()[AnnExpireAt] != exp2 {
-		t.Fatalf("expire-at after TTL=2h = %q, want %q", got2.GetAnnotations()[AnnExpireAt], exp2)
+	if got2.GetAnnotations()[defaultAnn().ExpireAt] != exp2 {
+		t.Fatalf("expire-at after TTL=2h = %q, want %q", got2.GetAnnotations()[defaultAnn().ExpireAt], exp2)
 	}
 }
 
@@ -233,7 +240,7 @@ func TestReconcile_AutoStartSetsLeaseStartAndExpire(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm2")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL: "5m",
+		defaultAnn().TTL: "5m",
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -245,7 +252,7 @@ func TestReconcile_AutoStartSetsLeaseStartAndExpire(t *testing.T) {
 	}
 	got := get(t, cl, gvk, "default", "cm2")
 
-	ls, err := time.Parse(time.RFC3339, got.GetAnnotations()[AnnLeaseStart])
+	ls, err := time.Parse(time.RFC3339, got.GetAnnotations()[defaultAnn().LeaseStart])
 	if err != nil {
 		t.Fatalf("lease-start parse error: %v", err)
 	}
@@ -254,8 +261,8 @@ func TestReconcile_AutoStartSetsLeaseStartAndExpire(t *testing.T) {
 		t.Fatalf("lease-start not within now window: %v vs [%v,%v]", ls, before, after)
 	}
 	exp := ls.Add(5 * time.Minute).Format(time.RFC3339)
-	if got.GetAnnotations()[AnnExpireAt] != exp {
-		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[AnnExpireAt], exp)
+	if got.GetAnnotations()[defaultAnn().ExpireAt] != exp {
+		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[defaultAnn().ExpireAt], exp)
 	}
 }
 
@@ -267,8 +274,8 @@ func TestReconcile_InvalidLeaseStartResetsAndUpdatesExpire(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm3")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "10m",
-		AnnLeaseStart: "not-a-time",
+		defaultAnn().TTL:        "10m",
+		defaultAnn().LeaseStart: "not-a-time",
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -278,13 +285,13 @@ func TestReconcile_InvalidLeaseStartResetsAndUpdatesExpire(t *testing.T) {
 		t.Fatalf("reconcile error: %v", err)
 	}
 	got := get(t, cl, gvk, "default", "cm3")
-	ls, err := time.Parse(time.RFC3339, got.GetAnnotations()[AnnLeaseStart])
+	ls, err := time.Parse(time.RFC3339, got.GetAnnotations()[defaultAnn().LeaseStart])
 	if err != nil {
 		t.Fatalf("lease-start not reset to RFC3339: %v", err)
 	}
 	exp := ls.Add(10 * time.Minute).Format(time.RFC3339)
-	if got.GetAnnotations()[AnnExpireAt] != exp {
-		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[AnnExpireAt], exp)
+	if got.GetAnnotations()[defaultAnn().ExpireAt] != exp {
+		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[defaultAnn().ExpireAt], exp)
 	}
 }
 
@@ -296,7 +303,7 @@ func TestReconcile_InvalidTTL_StatusOnly_NoExpire_NoDelete(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm4")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL: "totally-wrong",
+		defaultAnn().TTL: "totally-wrong",
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -307,11 +314,11 @@ func TestReconcile_InvalidTTL_StatusOnly_NoExpire_NoDelete(t *testing.T) {
 	}
 	got := get(t, cl, gvk, "default", "cm4")
 	anns := got.GetAnnotations()
-	if anns[AnnExpireAt] != "" {
-		t.Fatalf("expire-at should be empty, got %q", anns[AnnExpireAt])
+	if anns[defaultAnn().ExpireAt] != "" {
+		t.Fatalf("expire-at should be empty, got %q", anns[defaultAnn().ExpireAt])
 	}
-	if !strings.Contains(anns[AnnStatus], "Invalid TTL") {
-		t.Fatalf("lease-status should mention Invalid TTL, got %q", anns[AnnStatus])
+	if !strings.Contains(anns[defaultAnn().Status], "Invalid TTL") {
+		t.Fatalf("lease-status should mention Invalid TTL, got %q", anns[defaultAnn().Status])
 	}
 }
 
@@ -323,10 +330,10 @@ func TestReconcile_RemoveTTL_CleansLeaseAnnotations(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm5")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1h",
-		AnnLeaseStart: time.Now().UTC().Format(time.RFC3339),
-		AnnExpireAt:   time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339),
-		AnnStatus:     "ok",
+		defaultAnn().TTL:        "1h",
+		defaultAnn().LeaseStart: time.Now().UTC().Format(time.RFC3339),
+		defaultAnn().ExpireAt:   time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339),
+		defaultAnn().Status:     "ok",
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -334,7 +341,7 @@ func TestReconcile_RemoveTTL_CleansLeaseAnnotations(t *testing.T) {
 	// remove TTL
 	cur := get(t, cl, gvk, "default", "cm5")
 	anns := cur.GetAnnotations()
-	delete(anns, AnnTTL)
+	delete(anns, defaultAnn().TTL)
 	cur.SetAnnotations(anns)
 	if err := cl.Update(ctx, cur); err != nil {
 		t.Fatalf("update error: %v", err)
@@ -346,13 +353,13 @@ func TestReconcile_RemoveTTL_CleansLeaseAnnotations(t *testing.T) {
 	}
 	got := get(t, cl, gvk, "default", "cm5")
 	out := got.GetAnnotations()
-	if _, ok := out[AnnLeaseStart]; ok {
+	if _, ok := out[defaultAnn().LeaseStart]; ok {
 		t.Fatalf("lease-start should be cleaned")
 	}
-	if _, ok := out[AnnExpireAt]; ok {
+	if _, ok := out[defaultAnn().ExpireAt]; ok {
 		t.Fatalf("expire-at should be cleaned")
 	}
-	if _, ok := out[AnnStatus]; ok {
+	if _, ok := out[defaultAnn().Status]; ok {
 		t.Fatalf("lease-status should be cleaned")
 	}
 }
@@ -366,18 +373,18 @@ func TestReconcile_ExtendByDeletingLeaseStart(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm6")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "10m",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "10m",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
 
 	_, _ = r.Reconcile(ctx, controller_runtime.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "cm6"}})
 	got := get(t, cl, gvk, "default", "cm6")
-	oldExp, _ := time.Parse(time.RFC3339, got.GetAnnotations()[AnnExpireAt])
+	oldExp, _ := time.Parse(time.RFC3339, got.GetAnnotations()[defaultAnn().ExpireAt])
 
 	anns := got.GetAnnotations()
-	delete(anns, AnnLeaseStart)
+	delete(anns, defaultAnn().LeaseStart)
 	got.SetAnnotations(anns)
 	if err := cl.Update(ctx, got); err != nil {
 		t.Fatalf("update error: %v", err)
@@ -385,7 +392,7 @@ func TestReconcile_ExtendByDeletingLeaseStart(t *testing.T) {
 
 	_, _ = r.Reconcile(ctx, controller_runtime.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "cm6"}})
 	got2 := get(t, cl, gvk, "default", "cm6")
-	newExp, _ := time.Parse(time.RFC3339, got2.GetAnnotations()[AnnExpireAt])
+	newExp, _ := time.Parse(time.RFC3339, got2.GetAnnotations()[defaultAnn().ExpireAt])
 	if !newExp.After(oldExp) {
 		t.Fatalf("new expire-at %v should be after old %v", newExp, oldExp)
 	}
@@ -399,8 +406,8 @@ func TestReconcile_ExpiredDeletesObject(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm7")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1s",
-		AnnLeaseStart: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339),
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -424,8 +431,8 @@ func TestReconcile_Idempotent_NoChange(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm8")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1h",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "1h",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -451,8 +458,8 @@ func TestReconcile_RequeueAfterApproxTTL(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "default", "cm9")
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1h",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "1h",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
@@ -463,7 +470,7 @@ func TestReconcile_RequeueAfterApproxTTL(t *testing.T) {
 		t.Fatalf("reconcile error: %v", err)
 	}
 	got := get(t, cl, gvk, "default", "cm9")
-	exp, _ := time.Parse(time.RFC3339, got.GetAnnotations()[AnnExpireAt])
+	exp, _ := time.Parse(time.RFC3339, got.GetAnnotations()[defaultAnn().ExpireAt])
 
 	// expected ≈ exp - now
 	elapsed := time.Since(before)
@@ -494,10 +501,14 @@ func TestReconcile_NotFound_NoError(t *testing.T) {
 
 // Predicate guardrail: unrelated annotation change does not trigger
 func TestPredicate_UnrelatedAnnotationChangeDoesNotTrigger(t *testing.T) {
-	oldObj := makeObj(map[string]string{AnnTTL: "1h"})
-	newObj := makeObj(map[string]string{AnnTTL: "1h", "unrelated": "x"})
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+	a := r.Annotations
+	oldObj := makeObj(map[string]string{a.TTL: "1h"})
+	newObj := makeObj(map[string]string{a.TTL: "1h", "unrelated": "x"})
 	ev := event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}
-	if OnlyWithTTLAnnotation.UpdateFunc(ev) {
+	if pred.UpdateFunc(ev) {
 		t.Fatalf("unrelated annotation change should not trigger")
 	}
 }
@@ -519,8 +530,8 @@ func TestReconcile_SkipsUntrackedNamespace(t *testing.T) {
 	setMeta(obj, gvk, "ns-a", "cm-ns-a")
 	start := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "1h",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "1h",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	// tracker only allows ns-b
@@ -538,7 +549,7 @@ func TestReconcile_SkipsUntrackedNamespace(t *testing.T) {
 	}
 
 	got := get(t, cl, gvk, "ns-a", "cm-ns-a")
-	if v := got.GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := got.GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("expire-at set for untracked namespace: %q", v)
 	}
 }
@@ -552,8 +563,8 @@ func TestReconcile_ProcessesTrackedNamespace(t *testing.T) {
 	setMeta(obj, gvk, "ns-b", "cm-ns-b")
 	start := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "45m",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "45m",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	tr := util.NewNamespaceTracker()
@@ -570,8 +581,8 @@ func TestReconcile_ProcessesTrackedNamespace(t *testing.T) {
 
 	got := get(t, cl, gvk, "ns-b", "cm-ns-b")
 	wantExp := start.Add(45 * time.Minute).Format(time.RFC3339)
-	if got.GetAnnotations()[AnnExpireAt] != wantExp {
-		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[AnnExpireAt], wantExp)
+	if got.GetAnnotations()[defaultAnn().ExpireAt] != wantExp {
+		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[defaultAnn().ExpireAt], wantExp)
 	}
 }
 
@@ -584,8 +595,8 @@ func TestReconcile_NoTrackerProcessesAllNamespaces(t *testing.T) {
 	setMeta(obj, gvk, "random-ns", "cm-any")
 	start := time.Now().UTC().Add(15 * time.Minute).Truncate(time.Second)
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "30m",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "30m",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	r, cl, _ := newWatcher(t, gvk, obj) // Tracker nil
@@ -599,8 +610,8 @@ func TestReconcile_NoTrackerProcessesAllNamespaces(t *testing.T) {
 
 	got := get(t, cl, gvk, "random-ns", "cm-any")
 	wantExp := start.Add(30 * time.Minute).Format(time.RFC3339)
-	if got.GetAnnotations()[AnnExpireAt] != wantExp {
-		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[AnnExpireAt], wantExp)
+	if got.GetAnnotations()[defaultAnn().ExpireAt] != wantExp {
+		t.Fatalf("expire-at = %q, want %q", got.GetAnnotations()[defaultAnn().ExpireAt], wantExp)
 	}
 }
 
@@ -612,8 +623,8 @@ func TestReconcile_NamespaceBecomesTrackedLater(t *testing.T) {
 	setMeta(obj, gvk, "late-ns", "cm-late")
 	start := time.Now().UTC().Add(20 * time.Minute).Truncate(time.Second)
 	obj.SetAnnotations(map[string]string{
-		AnnTTL:        "40m",
-		AnnLeaseStart: start.Format(time.RFC3339),
+		defaultAnn().TTL:        "40m",
+		defaultAnn().LeaseStart: start.Format(time.RFC3339),
 	})
 
 	tr := util.NewNamespaceTracker() // initially empty
@@ -626,7 +637,7 @@ func TestReconcile_NamespaceBecomesTrackedLater(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile error: %v", err)
 	}
-	if v := get(t, cl, gvk, "late-ns", "cm-late").GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := get(t, cl, gvk, "late-ns", "cm-late").GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("expire-at should be empty before namespace is tracked, got %q", v)
 	}
 
@@ -639,7 +650,7 @@ func TestReconcile_NamespaceBecomesTrackedLater(t *testing.T) {
 		t.Fatalf("reconcile error: %v", err)
 	}
 	wantExp := start.Add(40 * time.Minute).Format(time.RFC3339)
-	if v := get(t, cl, gvk, "late-ns", "cm-late").GetAnnotations()[AnnExpireAt]; v != wantExp {
+	if v := get(t, cl, gvk, "late-ns", "cm-late").GetAnnotations()[defaultAnn().ExpireAt]; v != wantExp {
 		t.Fatalf("expire-at = %q, want %q", v, wantExp)
 	}
 }
@@ -649,14 +660,14 @@ func TestHandleNamespaceEvents_ProcessesAddedNamespace(t *testing.T) {
 
 	withTTL := &unstructured.Unstructured{}
 	setMeta(withTTL, gvk, "ns-a", "cm-ttl")
-	withTTL.SetAnnotations(map[string]string{AnnTTL: "30m"})
+	withTTL.SetAnnotations(map[string]string{defaultAnn().TTL: "30m"})
 
 	withoutTTL := &unstructured.Unstructured{}
 	setMeta(withoutTTL, gvk, "ns-a", "cm-no-ttl")
 
 	nsB := &unstructured.Unstructured{}
 	setMeta(nsB, gvk, "ns-b", "cm-b")
-	nsB.SetAnnotations(map[string]string{AnnTTL: "15m"})
+	nsB.SetAnnotations(map[string]string{defaultAnn().TTL: "15m"})
 
 	r, cl, _ := newWatcher(t, gvk, withTTL, withoutTTL, nsB)
 
@@ -668,8 +679,8 @@ func TestHandleNamespaceEvents_ProcessesAddedNamespace(t *testing.T) {
 
 	waitUntil(t, 2*time.Second, func() bool {
 		obj := get(t, cl, gvk, "ns-a", "cm-ttl")
-		ls := obj.GetAnnotations()[AnnLeaseStart]
-		ea := obj.GetAnnotations()[AnnExpireAt]
+		ls := obj.GetAnnotations()[defaultAnn().LeaseStart]
+		ea := obj.GetAnnotations()[defaultAnn().ExpireAt]
 		if ls == "" || ea == "" {
 			return false
 		}
@@ -678,10 +689,10 @@ func TestHandleNamespaceEvents_ProcessesAddedNamespace(t *testing.T) {
 		return err1 == nil && err2 == nil && exp.Equal(start.Add(30*time.Minute))
 	})
 
-	if v := get(t, cl, gvk, "ns-a", "cm-no-ttl").GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := get(t, cl, gvk, "ns-a", "cm-no-ttl").GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("unexpected expire-at for object without TTL: %q", v)
 	}
-	if v := get(t, cl, gvk, "ns-b", "cm-b").GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := get(t, cl, gvk, "ns-b", "cm-b").GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("ns-b object should not be processed by ns-a event, got %q", v)
 	}
 }
@@ -691,7 +702,7 @@ func TestHandleNamespaceEvents_IgnoresNonAddedEvents(t *testing.T) {
 
 	obj := &unstructured.Unstructured{}
 	setMeta(obj, gvk, "ns-x", "cm-x")
-	obj.SetAnnotations(map[string]string{AnnTTL: "10m"})
+	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "10m"})
 
 	r, cl, _ := newWatcher(t, gvk, obj)
 
@@ -702,7 +713,7 @@ func TestHandleNamespaceEvents_IgnoresNonAddedEvents(t *testing.T) {
 	close(r.eventChan)
 
 	time.Sleep(50 * time.Millisecond)
-	if v := get(t, cl, gvk, "ns-x", "cm-x").GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := get(t, cl, gvk, "ns-x", "cm-x").GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("non-Added event should not process objects, got expire-at=%q", v)
 	}
 }
@@ -712,11 +723,11 @@ func TestHandleNamespaceEvents_ProcessesMultipleObjectsInAddedNamespace(t *testi
 
 	a1 := &unstructured.Unstructured{}
 	setMeta(a1, gvk, "ns-y", "a1")
-	a1.SetAnnotations(map[string]string{AnnTTL: "5m"})
+	a1.SetAnnotations(map[string]string{defaultAnn().TTL: "5m"})
 
 	a2 := &unstructured.Unstructured{}
 	setMeta(a2, gvk, "ns-y", "a2")
-	a2.SetAnnotations(map[string]string{AnnTTL: "1h"})
+	a2.SetAnnotations(map[string]string{defaultAnn().TTL: "1h"})
 
 	a3 := &unstructured.Unstructured{} // no TTL, should be ignored
 	setMeta(a3, gvk, "ns-y", "a3")
@@ -730,11 +741,11 @@ func TestHandleNamespaceEvents_ProcessesMultipleObjectsInAddedNamespace(t *testi
 	close(r.eventChan)
 
 	waitUntil(t, 2*time.Second, func() bool {
-		g1 := get(t, cl, gvk, "ns-y", "a1").GetAnnotations()[AnnExpireAt]
-		g2 := get(t, cl, gvk, "ns-y", "a2").GetAnnotations()[AnnExpireAt]
+		g1 := get(t, cl, gvk, "ns-y", "a1").GetAnnotations()[defaultAnn().ExpireAt]
+		g2 := get(t, cl, gvk, "ns-y", "a2").GetAnnotations()[defaultAnn().ExpireAt]
 		return g1 != "" && g2 != ""
 	})
-	if v := get(t, cl, gvk, "ns-y", "a3").GetAnnotations()[AnnExpireAt]; v != "" {
+	if v := get(t, cl, gvk, "ns-y", "a3").GetAnnotations()[defaultAnn().ExpireAt]; v != "" {
 		t.Fatalf("object without TTL should be ignored, got expire-at=%q", v)
 	}
 }
