@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { PageSection, Title } from '@patternfly/react-core';
-import { ResourceLink, Timestamp, useK8sWatchResource, useK8sWatchResources } from '@openshift-console/dynamic-plugin-sdk';
+import { ResourceLink, Timestamp, useK8sWatchResource, useK8sWatchResources, ResourceIcon } from '@openshift-console/dynamic-plugin-sdk';
 
 const ANN_TTL = 'object-lease-controller.ullberg.us/ttl';
 const ANN_EXPIRE_AT = 'object-lease-controller.ullberg.us/expire-at';
@@ -148,7 +148,12 @@ const LeasesPage = () => {
         return (
           <table key={ref} className="pf-v5-c-table pf-m-grid-md" role="grid" style={{ marginTop: 16 }} aria-label={`Objects for ${ref}`}>
             <caption style={{ textAlign: 'left', paddingBottom: 6 }}>
-              <strong>{crdName ? <ResourceLink groupVersionKind={crdGVK} name={crdName} /> : <a href={`/api-resource/all-namespaces/${ref}`}> {(gvk.group || 'core')}/{gvk.version} {gvk.kind}</a>}</strong>
+              <strong>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ResourceIcon groupVersionKind={gvk} />
+                  <a href={`/api-resource/all-namespaces/${ref}`}>{gvk.kind}</a>
+                </span>
+              </strong>
             </caption>
             {rows.length > 0 && (
               <thead>
