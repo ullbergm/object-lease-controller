@@ -163,6 +163,12 @@ func main() {
 		Client:   mgr.GetClient(),
 		GVK:      gvk,
 		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
+		Annotations: controllers.Annotations{
+			TTL:        AnnTTL,
+			LeaseStart: AnnLeaseStart,
+			ExpireAt:   AnnExpireAt,
+			Status:     AnnStatus,
+		},
 	}
 
 	if optInLabelKey != "" && optInLabelValue != "" {
