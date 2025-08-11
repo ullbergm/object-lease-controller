@@ -17,7 +17,7 @@ This project implements a Kubernetes operator that allows you to specify a TTL (
 - Leader election support for high availability.
 
 ## Architecture
-The operator is designed to be highly extensible and scalable. For each GVK specified at startup, a dedicated controller is launched.
+The operator is designed to be highly extensible and scalable. Once deployed, the operator looks for CRDs and for each GVK specified in a CRD, a dedicated controller is launched.
 
 Each controller:
 - Watches for changes to resources of its GVK.
@@ -38,8 +38,10 @@ metadata:
   name: application-controller
 spec:
   group: "startpunkt.ullberg.us"
-  kind: "Application"
   version: "v1alpha2"
+  kind:
+    singular: "Application"
+    plural: "Applications"
 ---
 apiVersion: object-lease-controller.ullberg.us/v1alpha1
 kind: LeaseController
@@ -47,7 +49,9 @@ metadata:
   name: deployment-controller
 spec:
   group: ""
-  kind: "Deployment"
+  kind:
+    singular: "Deployment"
+    plural: "Deployments"
   version: "v1"
 ```
 
@@ -141,10 +145,40 @@ cd object-lease-operator
 make run
 ```
 
-### Install OpenShift Console Plugin
+### OpenShift Integration
+
+#### Installation via the Operator Hub interface
+By adding a catalog source to the cluster, you are able to install and manage the operator through the regular Operator Hub interface.
+
+> NOTE: The catalog is currently a preview feature and is being finalized. (See [#35](https://github.com/ullbergm/object-lease-controller/issues/35))
+
+```yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: object-lease-operator-catalog
+  namespace: openshift-marketplace
+spec:
+  displayName: Object Lease Operator Catalog
+  image: 'ghcr.io/ullbergm/object-lease-operator-catalog:latest'
+  publisher: Magnus Ullberg
+  sourceType: grpc
+  updateStrategy:
+    registryPoll:
+      interval: 5m
+```
+
+#### Monitoring
+Using _ServiceMonitor_ objects, the prometheus metrics are ingested in to the OpenShift monitoring platform and can be used for monitoring, alerting and reporting.
+
+#### Console Plugin
+
+If you install the console plugin, a menu option is added and allows administrators to view all the leases configured in the cluster.
+
 ```bash
 kubectl -n object-lease-operator-system apply -k object-lease-console-plugin/k8s
 ```
+![OpenShift Console Plugin Screenshot](docs/console-plugin.png){ width=600 }
 
 ## Behavior summary
 
