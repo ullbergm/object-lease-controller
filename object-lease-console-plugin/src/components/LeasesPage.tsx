@@ -133,7 +133,7 @@ const LeasesPage = () => {
   }, [leaseControllers, lcLoaded, lcError]);
 
   return (
-    <PageSection variant="light">
+    <PageSection variant="default" className="pf-v5-u-m-md pf-v5-u-p-md">
       <Title headingLevel="h1">Objects with TTL annotation</Title>
       {!loaded && !loadError && <div>Loading…</div>}
       {loadError && <div>Error loading: {String(loadError?.message || loadError)}</div>}
