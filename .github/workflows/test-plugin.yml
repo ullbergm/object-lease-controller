@@ -1,0 +1,31 @@
+name: Test - Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'object-lease-console-plugin/**'
+  pull_request:
+    paths:
+      - 'object-lease-console-plugin/**'
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-build:
+    name: Build console plugin image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx (for better caching, even though we use docker build)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build plugin image (no push)
+        run: make plugin-build
+        env:
+          # Tag to avoid collisions across concurrent runs; not pushed
+          PLUGIN_IMG: ghcr.io/ullbergm/object-lease-console-plugin:test-${{ github.run_id }}
