@@ -8,6 +8,9 @@ import (
 
 // LeaseMetrics holds Prometheus metrics for the lease controller for a specific GVK.
 type LeaseMetrics struct {
+	// Info is a stable metric set to 1 with GVK labels, making the custom
+	// metric family visible even before any reconciliations occur.
+	Info              prometheus.Gauge
 	LeasesStarted     prometheus.Counter
 	LeasesExpired     prometheus.Counter
 	InvalidTTL        prometheus.Counter
@@ -24,6 +27,12 @@ func NewLeaseMetrics(gvk schema.GroupVersionKind) *LeaseMetrics {
 	}
 
 	m := &LeaseMetrics{
+		Info: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace:   "object_lease_controller",
+			Name:        "info",
+			Help:        "Always 1; indicates the controller is running for the given GVK",
+			ConstLabels: constLabels,
+		}),
 		LeasesStarted: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace:   "object_lease_controller",
 			Name:        "leases_started_total",
@@ -58,12 +67,16 @@ func NewLeaseMetrics(gvk schema.GroupVersionKind) *LeaseMetrics {
 	}
 
 	crmetrics.Registry.MustRegister(
+		m.Info,
 		m.LeasesStarted,
 		m.LeasesExpired,
 		m.InvalidTTL,
 		m.ReconcileErrors,
 		m.ReconcileDuration,
 	)
+
+	// Ensure info is visible.
+	m.Info.Set(1)
 
 	return m
 }

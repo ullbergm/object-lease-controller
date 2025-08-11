@@ -62,7 +62,7 @@ spec:
           - --leader-elect
           - --leader-election-id=object-lease-operator
           - --health-probe-bind-address=:8081
-        image: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.3
+        image: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.6
         name: manager
         ports: []
         securityContext:
