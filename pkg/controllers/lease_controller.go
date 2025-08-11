@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	ometrics "object-lease-controller/pkg/metrics"
 	"object-lease-controller/pkg/util"
 )
 
@@ -31,6 +32,7 @@ type LeaseWatcher struct {
 	Recorder    record.EventRecorder
 	eventChan   chan util.NamespaceChangeEvent
 	Annotations Annotations
+	Metrics     *ometrics.LeaseMetrics
 }
 
 type Annotations struct {
@@ -83,122 +85,166 @@ func (r *LeaseWatcher) onlyWithTTLAnnotation() predicate.Funcs {
 	}
 }
 
-func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Request) (controller_runtime.Result, error) {
+func (r *LeaseWatcher) Reconcile(ctx context.Context, req controller_runtime.Request) (res controller_runtime.Result, retErr error) {
+	start := time.Now()
 	log := logger.FromContext(ctx).WithValues("GVK", r.GVK)
-	log.Info("reconciling lease")
-
-	// Filter by tracker namespaces
-	if r.Tracker != nil {
-		namespaces := r.Tracker.ListNamespaces()
-		found := false
-		for _, ns := range namespaces {
-			if req.Namespace == ns {
-				found = true
-				break
+	defer func() {
+		if r.Metrics != nil {
+			r.Metrics.ReconcileDuration.Observe(time.Since(start).Seconds())
+			if retErr != nil {
+				r.Metrics.ReconcileErrors.Inc()
 			}
 		}
-		if !found {
-			log.Info("namespace not tracked, skipping", "namespace", req.Namespace)
-			return controller_runtime.Result{}, nil
-		}
+	}()
+	log.Info("reconciling lease")
+
+	// Namespace filter
+	if r.Tracker != nil && !r.isNamespaceTracked(req.Namespace) {
+		log.Info("namespace not tracked, skipping", "namespace", req.Namespace)
+		return controller_runtime.Result{}, nil
 	}
 
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(r.GVK)
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			log.Info("object not found, skipping")
-			return controller_runtime.Result{}, nil
-		}
-		log.Error(err, "failed to get object")
+	// Get object
+	obj, err := r.getObject(ctx, req.NamespacedName)
+	if err != nil {
+		// not found is not an error
 		return controller_runtime.Result{}, client.IgnoreNotFound(err)
 	}
 
-	anns := obj.GetAnnotations()
-	if anns == nil {
-		anns = map[string]string{}
-	}
-
-	// If TTL missing, clean up all lease annotations and return
-	if anns[r.Annotations.TTL] == "" {
-		cleaned := false
-		for _, k := range []string{r.Annotations.ExpireAt, r.Annotations.Status, r.Annotations.LeaseStart} {
-			if _, exists := anns[k]; exists {
-				delete(anns, k)
-				cleaned = true
-			}
-		}
-		if cleaned {
-			log.Info("cleaned up lease annotations", "name", obj.GetName())
-			base := obj.DeepCopy()
-			obj.SetAnnotations(anns)
-			_ = r.Patch(ctx, obj, client.MergeFrom(base))
-			if r.Recorder != nil {
-				r.Recorder.Event(obj, "Normal", "LeaseAnnotationsCleaned", "Removed lease annotations because TTL is missing")
-			}
-		}
+	// If no TTL, clean and exit
+	if r.noTTL(obj) {
+		r.cleanupLeaseAnnotations(ctx, obj)
 		return controller_runtime.Result{}, nil
 	}
 
 	now := time.Now().UTC()
+	startAt := r.ensureLeaseStart(ctx, obj, now)
 
-	// Ensure lease-start exists. If missing or invalid, set to now.
-	start := now
+	ttl, err := util.ParseFlexibleDuration(obj.GetAnnotations()[r.Annotations.TTL])
+	if err != nil {
+		r.markInvalidTTL(ctx, obj, err)
+		return controller_runtime.Result{}, nil
+	}
+
+	expireAt := startAt.Add(ttl)
+	if now.After(expireAt) {
+		return r.handleExpired(ctx, obj, expireAt)
+	}
+
+	return r.setActive(ctx, obj, expireAt, now), nil
+}
+
+// ---------- helpers ----------
+
+func (r *LeaseWatcher) isNamespaceTracked(ns string) bool {
+	for _, n := range r.Tracker.ListNamespaces() {
+		if ns == n {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *LeaseWatcher) getObject(ctx context.Context, key client.ObjectKey) (*unstructured.Unstructured, error) {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(r.GVK)
+	if err := r.Get(ctx, key, obj); err != nil {
+		return nil, err
+	}
+	if obj.GetAnnotations() == nil {
+		obj.SetAnnotations(map[string]string{})
+	}
+	return obj, nil
+}
+
+func (r *LeaseWatcher) noTTL(obj *unstructured.Unstructured) bool {
+	anns := obj.GetAnnotations()
+	return anns[r.Annotations.TTL] == ""
+}
+
+func (r *LeaseWatcher) cleanupLeaseAnnotations(ctx context.Context, obj *unstructured.Unstructured) {
+	anns := obj.GetAnnotations()
+	cleaned := false
+	for _, k := range []string{r.Annotations.ExpireAt, r.Annotations.Status, r.Annotations.LeaseStart} {
+		if _, ok := anns[k]; ok {
+			delete(anns, k)
+			cleaned = true
+		}
+	}
+	if !cleaned {
+		return
+	}
+	base := obj.DeepCopy()
+	obj.SetAnnotations(anns)
+	_ = r.Patch(ctx, obj, client.MergeFrom(base))
+	if r.Recorder != nil {
+		r.Recorder.Event(obj, "Normal", "LeaseAnnotationsCleaned", "Removed lease annotations because TTL is missing")
+	}
+}
+
+func (r *LeaseWatcher) ensureLeaseStart(ctx context.Context, obj *unstructured.Unstructured, now time.Time) time.Time {
+	anns := obj.GetAnnotations()
 	if v, ok := anns[r.Annotations.LeaseStart]; ok && v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			start = t.UTC()
-		} else {
-			// reset invalid value
-			anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
-			r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
-			if r.Recorder != nil {
-				r.Recorder.Event(obj, "Warning", "LeaseStartReset", "Invalid lease-start, reset to now")
-			}
+			return t.UTC()
 		}
-	} else {
+		// invalid, reset
 		anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
 		r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
 		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Normal", "LeaseStarted", "Lease started")
+			r.Recorder.Event(obj, "Warning", "LeaseStartReset", "Invalid lease-start, reset to now")
 		}
-		start = now
+		return now
 	}
-
-	ttl, err := util.ParseFlexibleDuration(anns[r.Annotations.TTL])
-	if err != nil {
-		message := fmt.Sprintf("Invalid TTL: %v", err)
-		r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.Status: message})
-		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Warning", "InvalidTTL", message)
-		}
-		return controller_runtime.Result{}, nil
+	// missing, set
+	anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
+	r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
+	if r.Recorder != nil {
+		r.Recorder.Event(obj, "Normal", "LeaseStarted", "Lease started")
 	}
-
-	expireAt := start.Add(ttl)
-
-	if now.After(expireAt) {
-		leaseStatus := "Lease expired. Deleting object."
-		r.updateAnnotations(ctx, obj, map[string]string{
-			r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
-			r.Annotations.Status:   leaseStatus,
-		})
-		log.Info("Deleting object due to expired lease", "name", obj.GetName())
-		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Normal", "LeaseExpired", leaseStatus)
-		}
-		if err := util.DeleteWithUIDPrecondition(ctx, r.Client, obj); client.IgnoreNotFound(err) != nil {
-			return controller_runtime.Result{}, err
-		}
-		return controller_runtime.Result{}, nil
+	if r.Metrics != nil {
+		r.Metrics.LeasesStarted.Inc()
 	}
+	return now
+}
 
-	leaseStatus := fmt.Sprintf("Lease active. Expires at %s UTC.", expireAt.Format(time.RFC3339))
+func (r *LeaseWatcher) markInvalidTTL(ctx context.Context, obj *unstructured.Unstructured, parseErr error) {
+	msg := fmt.Sprintf("Invalid TTL: %v", parseErr)
+	r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.Status: msg})
+	if r.Recorder != nil {
+		r.Recorder.Event(obj, "Warning", "InvalidTTL", msg)
+	}
+	if r.Metrics != nil {
+		r.Metrics.InvalidTTL.Inc()
+	}
+}
+
+//nolint:unparam
+func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unstructured, expireAt time.Time) (controller_runtime.Result, error) {
+	leaseStatus := "Lease expired. Deleting object."
 	r.updateAnnotations(ctx, obj, map[string]string{
 		r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
 		r.Annotations.Status:   leaseStatus,
 	})
+	if r.Recorder != nil {
+		r.Recorder.Event(obj, "Normal", "LeaseExpired", leaseStatus)
+	}
+	if r.Metrics != nil {
+		r.Metrics.LeasesExpired.Inc()
+	}
+	if err := util.DeleteWithUIDPrecondition(ctx, r.Client, obj); client.IgnoreNotFound(err) != nil {
+		return controller_runtime.Result{}, err
+	}
+	return controller_runtime.Result{}, nil
+}
 
-	return controller_runtime.Result{RequeueAfter: expireAt.Sub(now)}, nil
+func (r *LeaseWatcher) setActive(ctx context.Context, obj *unstructured.Unstructured, expireAt time.Time, now time.Time) controller_runtime.Result {
+	status := fmt.Sprintf("Lease active. Expires at %s UTC.", expireAt.Format(time.RFC3339))
+	r.updateAnnotations(ctx, obj, map[string]string{
+		r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
+		r.Annotations.Status:   status,
+	})
+	return controller_runtime.Result{RequeueAfter: expireAt.Sub(now)}
 }
 
 func (r *LeaseWatcher) updateAnnotations(ctx context.Context, obj *unstructured.Unstructured, newAnns map[string]string) {
@@ -216,6 +262,11 @@ func (r *LeaseWatcher) updateAnnotations(ctx context.Context, obj *unstructured.
 
 func (r *LeaseWatcher) SetupWithManager(mgr manager.Manager) error {
 	setupLog.Info("Setting up LeaseWatcher", "GVK", r.GVK)
+
+	// Initialize metrics if not set
+	if r.Metrics == nil {
+		r.Metrics = ometrics.NewLeaseMetrics(r.GVK)
+	}
 
 	// Set up tracker event listener
 	if r.Tracker != nil {

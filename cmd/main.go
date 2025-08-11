@@ -22,6 +22,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	controllers "object-lease-controller/pkg/controllers"
+	ometrics "object-lease-controller/pkg/metrics"
 	"object-lease-controller/pkg/util"
 )
 
@@ -169,6 +170,7 @@ func main() {
 			ExpireAt:   AnnExpireAt,
 			Status:     AnnStatus,
 		},
+		Metrics: ometrics.NewLeaseMetrics(gvk),
 	}
 
 	if optInLabelKey != "" && optInLabelValue != "" {
