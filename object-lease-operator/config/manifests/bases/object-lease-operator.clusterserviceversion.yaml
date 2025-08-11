@@ -6,11 +6,11 @@ metadata:
     capabilities: Basic Install
     categories: Management
     certified: "false"
-    containerImage: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.0
+    containerImage: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.1
     description: Operator to manage object leases in Kubernetes.
     repository: https://github.com/ullbergm/object-lease-controller
     support: Magnus Ullberg <magnus@ullberg.us>
-  name: object-lease-operator.v0.2.0
+  name: object-lease-operator.v0.2.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -51,4 +51,4 @@ spec:
   minKubeVersion: 1.13.0
   provider:
     name: Magnus Ullberg
-  version: 0.2.0
+  version: 0.2.1

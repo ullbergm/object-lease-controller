@@ -10,9 +10,6 @@ spec:
       name: object-lease-console-plugin
       namespace: object-lease-operator-system
       port: 8443
-  name: object-lease-console-plugin
-  namespace: object-lease-operator-system
-  port: 8443
-  basePath: /
+      basePath: /
   i18n:
     loadType: Preload

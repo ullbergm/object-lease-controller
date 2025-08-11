@@ -1,5 +1,5 @@
-IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.0
-PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.0
+IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.1
+PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.1
 # Container tool to use for building and pushing images
 CONTAINER_TOOL ?= docker
 
@@ -24,10 +24,10 @@ build: tidy fmt vet test
 docker-build: build
 	docker build -t $(IMG) .
 
-docker-push:
+docker-push: docker-build
 	docker push $(IMG)
 
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x
+PLATFORMS ?= linux/arm64,linux/amd64
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name project-v3-builder

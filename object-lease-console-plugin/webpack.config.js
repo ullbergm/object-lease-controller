@@ -36,7 +36,7 @@ module.exports = {
     new ConsoleRemotePlugin({
       pluginMetadata: {
         name: 'object-lease-console-plugin',
-        version: '0.2.0',
+        version: '0.2.1',
         displayName: 'Object Lease Console Plugin',
         description: 'Navigation and pages to view Kubernetes Lease resources',
         exposedModules: {

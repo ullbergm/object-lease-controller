@@ -14,10 +14,9 @@ spec:
       labels:
         app.kubernetes.io/name: object-lease-console-plugin
     spec:
-      serviceAccountName: controller-manager
       containers:
         - name: plugin
-          image: ghcr.io/ullbergm/object-lease-console-plugin:v0.2.0
+          image: ghcr.io/ullbergm/object-lease-console-plugin:v0.2.1
           imagePullPolicy: Always
           command: ["/usr/local/bin/run.sh"]
           ports:
