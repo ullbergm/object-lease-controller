@@ -6,7 +6,7 @@
     "jsx": "react",
     "moduleResolution": "Node",
     "resolveJsonModule": true,
-    "types": ["node", "react", "react-dom"],
+  "types": ["node", "react", "react-dom"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,

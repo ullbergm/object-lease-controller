@@ -13,23 +13,25 @@
     "start": "webpack serve --mode=development --port 9001 --hot --progress",
     "i18n": "node ./scripts/extract-i18n.js"
   },
-  "dependencies": {
-    "@openshift-console/dynamic-plugin-sdk": "^4.19.0",
-    "@patternfly/react-core": "^6.3.1",
-    "@patternfly/react-icons": "^6.3.1",
-    "react": "^17.0.1",
-    "react-dom": "^17.0.1",
-    "react-router-dom": "^5.3.3",
-    "react-i18next": "^11.12.0",
-    "i18next": "^25.3.4"
+  "dependencies": {},
+  "peerDependencies": {
+    "@openshift-console/dynamic-plugin-sdk": "*",
+    "@patternfly/react-core": "*",
+    "@patternfly/react-icons": "*",
+    "react": "*",
+    "react-dom": "*"
   },
   "devDependencies": {
+    "@openshift-console/dynamic-plugin-sdk": "^4.19.0",
     "@openshift-console/dynamic-plugin-sdk-webpack": "^4.19.0",
+    "@patternfly/react-core": "^6.3.1",
+    "@patternfly/react-icons": "^6.3.1",
     "@types/react": "17.0.1",
     "@types/react-dom": "17.0.1",
-    "@types/react-router-dom": "5.3.3",
-    "css-loader": "^7.1.2",
     "copy-webpack-plugin": "^13.0.0",
+    "css-loader": "^7.1.2",
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.2",
     "typescript": "^5.9.2",
