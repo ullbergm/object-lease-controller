@@ -1,4 +1,12 @@
-# Object Lease Operator
+<h1 align="center">Object Lease Operator</h1>
+<p align="center">
+  <a target="_blank" href="https://github.com/ullbergm/object-lease-controller"><img src="https://img.shields.io/github/last-commit/ullbergm/object-lease-controller?logo=github&color=609966&logoColor=fff" alt="Last commit"/></a>
+  <a href="https://github.com/ullbergm/object-lease-controller/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-609966?logo=opensourceinitiative&logoColor=fff" alt="License Apache 2.0"/></a>
+  <a href="https://codecov.io/gh/ullbergm/object-lease-controller"><img src="https://codecov.io/gh/ullbergm/object-lease-controller/graph/badge.svg?token=TUKIQAAR1R" alt="Test Coverage"/></a>
+  <br />
+  <a href="https://buymeacoffee.com/magnus.ullberg"><img src="https://img.shields.io/badge/Buy%20me%20a-coffee-ff1414.svg?color=aa1414&logoColor=fff&label=Buy%20me%20a" alt="buy me a coffee"/></a>
+  <a href="https://ullberg.us/cv.pdf"><img src="https://img.shields.io/badge/Offer%20me%20a-job-00d414.svg?color=0000f4&logoColor=fff&label=Offer%20me%20a" alt="offer me a job"/></a>
+</p>
 
 This project implements a Kubernetes operator that allows you to specify a TTL (Time To Live) for an object and once that time passes the object is deleted. The operator dynamically deploys a controller for each Group-Version-Kind (GVK) you configure it to monitor. Each controller watches and manages resources of its assigned GVK, enabling scalable lease management across multiple resource types. The service account for the controller is granted a role the allows it to manage the specified GVK only.
 
@@ -131,6 +139,11 @@ make build
 ```bash
 cd object-lease-operator
 make run
+```
+
+### Install OpenShift Console Plugin
+```bash
+kubectl -n object-lease-operator-system apply -k object-lease-console-plugin/k8s
 ```
 
 ## Behavior summary

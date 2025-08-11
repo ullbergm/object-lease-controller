@@ -1,10 +1,16 @@
-name: Tests
+name: Test - Controller
 
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'object-lease-console-plugin/**'
+      - 'object-lease-operator/**'
   pull_request:
+    paths-ignore:
+      - 'object-lease-console-plugin/**'
+      - 'object-lease-operator/**'
 
 jobs:
   test:

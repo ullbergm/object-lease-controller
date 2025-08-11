@@ -1,0 +1,15 @@
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: object-lease-console-plugin
+spec:
+  displayName: Object Lease Console Plugin
+  backend:
+    type: Service
+    service:
+      name: object-lease-console-plugin
+      namespace: object-lease-operator-system
+      port: 8443
+      basePath: /
+  i18n:
+    loadType: Preload

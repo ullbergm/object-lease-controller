@@ -275,11 +275,12 @@ func (r *LeaseWatcher) SetupWithManager(mgr manager.Manager) error {
 		go r.handleNamespaceEvents(mgr)
 	}
 
+	// Build a typed unstructured with GVK set; for core group, apiVersion is just Version (e.g., "v1")
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(r.GVK)
+
 	return controller_runtime.NewControllerManagedBy(mgr).
-		For(&unstructured.Unstructured{Object: map[string]interface{}{
-			"apiVersion": fmt.Sprintf("%s/%s", r.GVK.Group, r.GVK.Version),
-			"kind":       r.GVK.Kind,
-		}}, builder.WithPredicates(r.onlyWithTTLAnnotation())).
+		For(obj, builder.WithPredicates(r.onlyWithTTLAnnotation())).
 		Complete(r)
 }
 
@@ -289,10 +290,11 @@ func (r *LeaseWatcher) handleNamespaceEvents(mgr clientProvider) {
 		if evt.Change == util.NamespaceAdded {
 			k8sClient := mgr.GetClient()
 			list := &unstructured.UnstructuredList{}
+			// For listing, the Kind must be Kind+"List"
 			list.SetGroupVersionKind(schema.GroupVersionKind{
 				Group:   r.GVK.Group,
 				Version: r.GVK.Version,
-				Kind:    r.GVK.Kind,
+				Kind:    r.GVK.Kind + "List",
 			})
 			opts := &client.ListOptions{Namespace: evt.Namespace}
 			err := k8sClient.List(context.Background(), list, opts)
