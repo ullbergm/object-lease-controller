@@ -1,0 +1,22 @@
+# charts/object-lease-controller/templates/servicemonitor.yaml
+{{- if and .Values.metrics.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "leasecontroller.fullname" . }}
+  labels:
+    {{- include "leasecontroller.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}{{- toYaml . | nindent 4 }}{{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+    {{- include "leasecontroller.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      honorLabels: true
+{{- end }}

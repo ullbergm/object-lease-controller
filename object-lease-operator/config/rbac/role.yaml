@@ -27,6 +27,13 @@ rules:
   - events
   verbs:
   - create
+# We need to create ServiceMonitors
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - "*"
 
 ##
 ## Rules for object-lease-controller.ullberg.us/v1alpha1, Kind: LeaseController

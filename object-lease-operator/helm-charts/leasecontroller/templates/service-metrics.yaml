@@ -1,15 +1,22 @@
+# charts/object-lease-controller/templates/service-metrics.yaml
+{{- if .Values.metrics.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "leasecontroller.fullname" . }}-metrics
   labels:
     {{- include "leasecontroller.labels" . | nindent 4 }}
+  annotations:
+    # harmless if unused; some stacks scrape these
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.metrics.port }}"
 spec:
   type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: metrics
-      protocol: TCP
-      name: metrics
   selector:
     {{- include "leasecontroller.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

@@ -188,3 +188,21 @@ kubectl -n object-lease-operator-system apply -k object-lease-console-plugin/k8s
 * Delete `ttl` to stop management. Controller removes lease annotations.
 * Reconcile filters only react to changes in `ttl` and `lease-start`.
 * The controller computes `expire-at` from `lease-start + ttl` and requeues until expiry.
+
+## OpenShift User Workload Monitoring
+
+If you want OpenShift User Workload Monitoring (UWM) to scrape your ServiceMonitor, ensure UWM is enabled and your operator’s namespace participates. Example:
+
+```bash
+# Enable UWM cluster-wide
+oc -n openshift-monitoring patch configmap cluster-monitoring-config \
+  --type merge -p '{"data":{"config.yaml":"enableUserWorkload: true\n"}}'
+
+# Label your namespace if needed
+oc label namespace <ns> 'openshift.io/user-monitoring=true' --overwrite
+```
+
+Details on enabling and namespace participation are documented by Red Hat:
+- [Red Hat Documentation](https://docs.openshift.com/container-platform/latest/monitoring/enabling-monitoring-for-user-defined-projects.html)
+
+That is all you need. Your counters and histogram are already registered on the default registry, so Prometheus will scrape them from `/metrics` on the ServiceMonitor endpoint.
