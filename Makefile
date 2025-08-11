@@ -1,5 +1,5 @@
-IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.1
-PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.1
+IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.3
+PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.3
 # Container tool to use for building and pushing images
 CONTAINER_TOOL ?= docker
 
@@ -53,3 +53,9 @@ deploy-operator-and-plugin:
 	kubectl apply -k object-lease-operator/config/default
 
 .PHONY: run tidy fmt vet test build docker-build docker-push plugin-build plugin-push deploy-operator-and-plugin
+
+push-everything:
+	$(MAKE) docker-push
+	$(MAKE) plugin-push
+	cd object-lease-operator && $(MAKE) docker-push && cd ..
+	cd object-lease-operator && $(MAKE) catalog-push && cd ..

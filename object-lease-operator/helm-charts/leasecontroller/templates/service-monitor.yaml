@@ -3,7 +3,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "object-lease-controller.fullname" . }}
+  name: {{ include "leasecontroller.fullname" . }}
   labels:
     {{- include "leasecontroller.labels" . | nindent 4 }}
     {{- with .Values.metrics.serviceMonitor.labels }}{{- toYaml . | nindent 4 }}{{- end }}
