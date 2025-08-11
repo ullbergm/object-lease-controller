@@ -1,4 +1,7 @@
-IMG ?= quay.io/ullbergm/object-lease-controller:latest
+IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.1
+PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.1
+# Container tool to use for building and pushing images
+CONTAINER_TOOL ?= docker
 
 run: build
 	./bin/lease-controller -group startpunkt.ullberg.us -kind Application -version v1alpha2 -leader-elect -leader-elect-namespace default -opt-in-label-key "object-lease-controller.ullberg.us/enabled" -opt-in-label-value true
@@ -21,7 +24,32 @@ build: tidy fmt vet test
 docker-build: build
 	docker build -t $(IMG) .
 
-docker-push:
+docker-push: docker-build
 	docker push $(IMG)
 
-.PHONY: run tidy fmt vet test build docker-build docker-push
+PLATFORMS ?= linux/arm64,linux/amd64
+.PHONY: docker-buildx
+docker-buildx: ## Build and push docker image for the manager for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
+	$(CONTAINER_TOOL) buildx use project-v3-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile .
+	- $(CONTAINER_TOOL) buildx rm project-v3-builder
+
+.PHONY: plugin-buildx
+plugin-buildx: ## Build and push docker image for the plugin for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
+	$(CONTAINER_TOOL) buildx use project-v3-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${PLUGIN_IMG} object-lease-console-plugin
+	- $(CONTAINER_TOOL) buildx rm project-v3-builder
+
+# Console plugin
+plugin-build:
+	docker build -t $(PLUGIN_IMG) object-lease-console-plugin
+
+plugin-push: plugin-build
+	docker push $(PLUGIN_IMG)
+
+deploy-operator-and-plugin:
+	kubectl apply -k object-lease-operator/config/default
+
+.PHONY: run tidy fmt vet test build docker-build docker-push plugin-build plugin-push deploy-operator-and-plugin

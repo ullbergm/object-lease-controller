@@ -28,3 +28,4 @@ go.work
 *~
 
 tmp/**
+object-lease-operator/bundle/

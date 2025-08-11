@@ -141,6 +141,11 @@ cd object-lease-operator
 make run
 ```
 
+### Install OpenShift Console Plugin
+```bash
+kubectl -n object-lease-operator-system apply -k object-lease-console-plugin/k8s
+```
+
 ## Behavior summary
 
 * Add `ttl` to start management. Controller sets `lease-start` if missing.

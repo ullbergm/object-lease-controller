@@ -5,7 +5,7 @@ metadata:
   namespace: openshift-marketplace
 spec:
   displayName: Object Lease Operator Catalog
-  image: 'ghcr.io/ullbergm/object-lease-operator-catalog:v0.0.1'
+  image: 'ghcr.io/ullbergm/object-lease-operator-catalog:latest'
   publisher: Magnus Ullberg
   sourceType: grpc
   updateStrategy:

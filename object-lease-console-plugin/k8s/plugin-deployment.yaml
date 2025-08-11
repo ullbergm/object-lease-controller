@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: object-lease-console-plugin
+  labels:
+    app.kubernetes.io/name: object-lease-console-plugin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: object-lease-console-plugin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: object-lease-console-plugin
+    spec:
+      containers:
+        - name: plugin
+          image: ghcr.io/ullbergm/object-lease-console-plugin:v0.2.1
+          imagePullPolicy: Always
+          command: ["/usr/local/bin/run.sh"]
+          ports:
+            - containerPort: 8443
+              name: https
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: serving-cert
+              mountPath: /var/serving-cert
+              readOnly: true
+          env:
+            - name: NODE_ENV
+              value: production
+      volumes:
+        - name: serving-cert
+          secret:
+            secretName: object-lease-console-plugin-serving-cert
