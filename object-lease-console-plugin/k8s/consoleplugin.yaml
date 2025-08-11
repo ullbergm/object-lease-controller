@@ -7,10 +7,10 @@ spec:
   backend:
     type: Service
     service:
-      name: object-lease-operator-object-lease-console-plugin
+      name: object-lease-console-plugin
       namespace: object-lease-operator-system
       port: 8443
-  name: object-lease-operator-object-lease-console-plugin
+  name: object-lease-console-plugin
   namespace: object-lease-operator-system
   port: 8443
   basePath: /

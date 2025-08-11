@@ -39,12 +39,12 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 plugin-buildx: ## Build and push docker image for the plugin for cross-platform support
 	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
 	$(CONTAINER_TOOL) buildx use project-v3-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${PLUGIN_IMG} console-plugin/object-lease-console-plugin
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${PLUGIN_IMG} object-lease-console-plugin
 	- $(CONTAINER_TOOL) buildx rm project-v3-builder
 
 # Console plugin
 plugin-build:
-	docker build -t $(PLUGIN_IMG) console-plugin/object-lease-console-plugin
+	docker build -t $(PLUGIN_IMG) object-lease-console-plugin
 
 plugin-push: plugin-build
 	docker push $(PLUGIN_IMG)

@@ -24,7 +24,7 @@ metadata:
     categories: Management
     certified: "false"
     containerImage: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.0
-    createdAt: "2025-08-07T17:41:52Z"
+    createdAt: "2025-08-11T00:45:55Z"
     description: Operator to manage object leases in Kubernetes.
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: helm.sdk.operatorframework.io/v1
@@ -206,12 +206,9 @@ spec:
             spec:
               containers:
               - args:
-                - --metrics-require-rbac
-                - --metrics-secure
                 - --metrics-bind-address=:8443
-                - --leader-elect
-                - --leader-election-id=object-lease-operator
-                - --health-probe-bind-address=:8081
+                - --metrics-secure
+                - --metrics-require-rbac
                 image: ghcr.io/ullbergm/object-lease-operator-controller:v0.2.0
                 livenessProbe:
                   httpGet:
