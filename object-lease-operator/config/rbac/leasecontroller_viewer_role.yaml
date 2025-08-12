@@ -1,7 +1,7 @@
 # This rule is not used by the project object-lease-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to object-lease-controller.ullberg.us resources.
+# Grants read-only access to object-lease-controller.ullberg.io resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -14,7 +14,7 @@ metadata:
   name: leasecontroller-viewer-role
 rules:
 - apiGroups:
-  - object-lease-controller.ullberg.us
+  - object-lease-controller.ullberg.io
   resources:
   - leasecontrollers
   verbs:
@@ -22,7 +22,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - object-lease-controller.ullberg.us
+  - object-lease-controller.ullberg.io
   resources:
   - leasecontrollers/status
   verbs:

@@ -36,10 +36,10 @@ rules:
   - "*"
 
 ##
-## Rules for object-lease-controller.ullberg.us/v1alpha1, Kind: LeaseController
+## Rules for object-lease-controller.ullberg.io/v1alpha1, Kind: LeaseController
 ##
 - apiGroups:
-  - object-lease-controller.ullberg.us
+  - object-lease-controller.ullberg.io
   resources:
   - leasecontrollers
   - leasecontrollers/status

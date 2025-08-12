@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: ullberg.us
+domain: ullberg.io
 layout:
 - helm.sdk.operatorframework.io/v1
 plugins:
@@ -13,7 +13,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
-  domain: ullberg.us
+  domain: ullberg.io
   group: object-lease-controller
   kind: LeaseController
   version: v1alpha1

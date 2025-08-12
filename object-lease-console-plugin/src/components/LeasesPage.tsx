@@ -2,16 +2,16 @@ import * as React from 'react';
 import { PageSection, Title } from '@patternfly/react-core';
 import { ResourceLink, Timestamp, useK8sWatchResource, useK8sWatchResources, ResourceIcon } from '@openshift-console/dynamic-plugin-sdk';
 
-const ANN_TTL = 'object-lease-controller.ullberg.us/ttl';
-const ANN_EXPIRE_AT = 'object-lease-controller.ullberg.us/expire-at';
-const ANN_STATUS = 'object-lease-controller.ullberg.us/lease-status';
+const ANN_TTL = 'object-lease-controller.ullberg.io/ttl';
+const ANN_EXPIRE_AT = 'object-lease-controller.ullberg.io/expire-at';
+const ANN_STATUS = 'object-lease-controller.ullberg.io/lease-status';
 
 type GVK = { group: string; version: string; kind: string };
 type WatchCfg = { groupVersionKind: GVK; namespaced: boolean; isList: true; namespace?: string };
 
 const LeasesPage = () => {
   // Try to use LeaseController CRs if present to determine which Kinds to scan
-  const leaseControllerGVK: GVK = { group: 'object-lease-controller.ullberg.us', version: 'v1alpha1', kind: 'LeaseController' };
+  const leaseControllerGVK: GVK = { group: 'object-lease-controller.ullberg.io', version: 'v1alpha1', kind: 'LeaseController' };
   const [leaseControllers, lcLoaded, lcError] = useK8sWatchResource({
     groupVersionKind: leaseControllerGVK,
     isList: true,

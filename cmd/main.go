@@ -28,10 +28,10 @@ import (
 
 // Lease annotation keys
 const (
-	AnnTTL        = "object-lease-controller.ullberg.us/ttl"
-	AnnLeaseStart = "object-lease-controller.ullberg.us/lease-start" // RFC3339 UTC
-	AnnExpireAt   = "object-lease-controller.ullberg.us/expire-at"
-	AnnStatus     = "object-lease-controller.ullberg.us/lease-status"
+	AnnTTL        = "object-lease-controller.ullberg.io/ttl"
+	AnnLeaseStart = "object-lease-controller.ullberg.io/lease-start" // RFC3339 UTC
+	AnnExpireAt   = "object-lease-controller.ullberg.io/expire-at"
+	AnnStatus     = "object-lease-controller.ullberg.io/lease-status"
 )
 
 var (
