@@ -3,7 +3,7 @@
 # ==============================================================================
 
 # Project version
-VERSION ?= 0.2.6
+VERSION ?= 1.0.0
 
 # Image configuration
 IMAGE_TAG_BASE ?= ghcr.io/ullbergm/object-lease-operator
@@ -32,12 +32,13 @@ BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 ifeq ($(USE_IMAGE_DIGESTS), true)
 	BUNDLE_GEN_FLAGS += --use-image-digests
 endif
+BUNDLE_DIR ?= bundle
 
 # Catalog configuration
 PACKAGE ?= object-lease-operator
-CHANNEL ?= alpha
+CHANNEL ?= fast-v1
 DEFAULT_CHANNEL ?= $(CHANNEL)
-BUNDLE_IMGS ?= $(BUNDLE_IMG),$(IMAGE_TAG_BASE)-bundle:v0.2.3,$(IMAGE_TAG_BASE)-bundle:v0.2.4,$(IMAGE_TAG_BASE)-bundle:v0.2.5
+BUNDLE_IMGS ?= $(BUNDLE_IMG)
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:latest
 CATALOG_DIR ?= catalog
 FBC_FILE ?= $(CATALOG_DIR)/index.yaml
@@ -194,6 +195,10 @@ bundle-build: bundle ## Build the bundle image
 .PHONY: bundle-push
 bundle-push: bundle-build ## Push the bundle image
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: bundle-clean
+bundle-clean: ## Remove generated bundle artifacts
+	@rm -rf $(BUNDLE_DIR)
 
 # ==============================================================================
 

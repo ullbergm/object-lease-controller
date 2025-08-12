@@ -11,7 +11,7 @@ type WatchCfg = { groupVersionKind: GVK; namespaced: boolean; isList: true; name
 
 const LeasesPage = () => {
   // Try to use LeaseController CRs if present to determine which Kinds to scan
-  const leaseControllerGVK: GVK = { group: 'object-lease-controller.ullberg.io', version: 'v1alpha1', kind: 'LeaseController' };
+  const leaseControllerGVK: GVK = { group: 'object-lease-controller.ullberg.io', version: 'v1', kind: 'LeaseController' };
   const [leaseControllers, lcLoaded, lcError] = useK8sWatchResource({
     groupVersionKind: leaseControllerGVK,
     isList: true,

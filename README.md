@@ -32,7 +32,7 @@ Each controller:
 ### LeaseController
 ```yaml
 ---
-apiVersion: object-lease-controller.ullberg.io/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: application-controller
@@ -43,7 +43,7 @@ spec:
     singular: "Application"
     plural: "Applications"
 ---
-apiVersion: object-lease-controller.ullberg.io/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: deployment-controller

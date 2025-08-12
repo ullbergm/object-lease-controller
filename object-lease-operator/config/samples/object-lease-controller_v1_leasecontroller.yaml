@@ -1,4 +1,4 @@
-apiVersion: object-lease-controller.ullberg.io/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: leasecontroller-deployments
