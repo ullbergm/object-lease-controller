@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [docs]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository using git
+        uses: actions/checkout@v4
+      - name: Install and build
+        uses: withastro/action@v2

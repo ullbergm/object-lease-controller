@@ -1,0 +1,10 @@
+@layer base, starlight, theme, components, utilities;
+
+
+.hero {
+  display: block
+}
+
+.tagline {
+  max-width: max-content;
+}

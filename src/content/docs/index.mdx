@@ -1,0 +1,19 @@
+---
+title: Welcome to Object Lease Controller
+description: Get started managing object leases in kubernetes.
+template: splash
+hero:
+  tagline: Kubernetes controller that manages object leases!
+  actions:
+    - text: Getting started
+      link: /guides/getting-started/
+      icon: right-arrow
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="Manage time to live for kubernetes objects" icon="pencil">
+		Set a time to live for a kubernetes object using an annotation and the object is automatically deleted when it expires.
+	</Card>
+</CardGrid>
