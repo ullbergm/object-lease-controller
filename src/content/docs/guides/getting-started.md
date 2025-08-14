@@ -33,18 +33,18 @@ Once the operator has been installed then you can configure the objects that it 
 ## LeaseController
 ```yaml
 ---
-apiVersion: object-lease-controller.ullberg.us/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: application-controller
 spec:
-  group: "startpunkt.ullberg.us"
+  group: "startpunkt.ullberg.io"
   version: "v1alpha2"
   kind:
     singular: "Application"
     plural: "Applications"
 ---
-apiVersion: object-lease-controller.ullberg.us/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: deployment-controller
@@ -67,7 +67,7 @@ kind: Application
 metadata:
   name: google
   annotations:
-    object-lease-controller.ullberg.us/ttl: "30m"
+    object-lease-controller.ullberg.io/ttl: "30m"
 spec:
   name: Google
   url: https://google.com
