@@ -5,7 +5,7 @@
   <a href="https://codecov.io/gh/ullbergm/object-lease-controller"><img src="https://codecov.io/gh/ullbergm/object-lease-controller/graph/badge.svg?token=TUKIQAAR1R" alt="Test Coverage"/></a>
   <br />
   <a href="https://buymeacoffee.com/magnus.ullberg"><img src="https://img.shields.io/badge/Buy%20me%20a-coffee-ff1414.svg?color=aa1414&logoColor=fff&label=Buy%20me%20a" alt="buy me a coffee"/></a>
-  <a href="https://ullberg.us/cv.pdf"><img src="https://img.shields.io/badge/Offer%20me%20a-job-00d414.svg?color=0000f4&logoColor=fff&label=Offer%20me%20a" alt="offer me a job"/></a>
+  <a href="https://ullberg.io/cv.pdf"><img src="https://img.shields.io/badge/Offer%20me%20a-job-00d414.svg?color=0000f4&logoColor=fff&label=Offer%20me%20a" alt="offer me a job"/></a>
 </p>
 
 This project implements a Kubernetes operator that allows you to specify a TTL (Time To Live) for an object and once that time passes the object is deleted. The operator dynamically deploys a controller for each Group-Version-Kind (GVK) you configure it to monitor. Each controller watches and manages resources of its assigned GVK, enabling scalable lease management across multiple resource types. The service account for the controller is granted a role the allows it to manage the specified GVK only.
@@ -32,7 +32,7 @@ Each controller:
 ### LeaseController
 ```yaml
 ---
-apiVersion: object-lease-controller.ullberg.us/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: application-controller
@@ -43,7 +43,7 @@ spec:
     singular: "Application"
     plural: "Applications"
 ---
-apiVersion: object-lease-controller.ullberg.us/v1alpha1
+apiVersion: object-lease-controller.ullberg.io/v1
 kind: LeaseController
 metadata:
   name: deployment-controller
@@ -62,7 +62,7 @@ kind: Application
 metadata:
   name: google
   annotations:
-    object-lease-controller.ullberg.us/ttl: "30m"
+    object-lease-controller.ullberg.io/ttl: "30m"
 spec:
   name: Google
   url: https://google.com
@@ -70,11 +70,11 @@ spec:
 
 ### Annotations
 
-#### object-lease-controller.ullberg.us/ttl
+#### object-lease-controller.ullberg.io/ttl
 
 This will allow you to configure the time until the object will be deleted.
 ```bash
-kubectl annotate pod test object-lease-controller.ullberg.us/ttl=1h30m
+kubectl annotate pod test object-lease-controller.ullberg.io/ttl=1h30m
 ```
 
 You can specify the time in hours, minutes, days, weeks, etc.
@@ -88,7 +88,7 @@ You can specify the time in hours, minutes, days, weeks, etc.
 | `3h`    | 3 hours          |
 | `10s`   | 10 seconds       |
 
-### object-lease-controller.ullberg.us/lease-start
+### object-lease-controller.ullberg.io/lease-start
 
 RFC3339 UTC timestamp. Single source of truth for when the lease started.
 
@@ -102,17 +102,17 @@ Examples:
 
 ```bash
 # Extend now by resetting the start
-kubectl annotate pod test object-lease-controller.ullberg.us/lease-start- --overwrite
+kubectl annotate pod test object-lease-controller.ullberg.io/lease-start- --overwrite
 
 # Set a specific start time
-kubectl annotate pod test object-lease-controller.ullberg.us/lease-start=2025-01-01T12:00:00Z --overwrite
+kubectl annotate pod test object-lease-controller.ullberg.io/lease-start=2025-01-01T12:00:00Z --overwrite
 ```
 
-### object-lease-controller.ullberg.us/expire-at
+### object-lease-controller.ullberg.io/expire-at
 
 Set by the controller. RFC3339 UTC timestamp for when the object will expire. Safe for dashboards to read.
 
-### object-lease-controller.ullberg.us/lease-status
+### object-lease-controller.ullberg.io/lease-status
 
 Set by the controller. Human readable status or validation errors.
 
@@ -121,7 +121,7 @@ Set by the controller. Human readable status or validation errors.
 Remove `ttl` to stop lease management. The controller clears `lease-start`, `expire-at`, and `lease-status`.
 
 ```bash
-kubectl annotate pod test object-lease-controller.ullberg.us/ttl-
+kubectl annotate pod test object-lease-controller.ullberg.io/ttl-
 ```
 
 ## Example Use Cases

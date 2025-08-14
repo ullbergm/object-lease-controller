@@ -3,8 +3,8 @@
 # =============================================================================
 
 # Image configurations
-IMG ?= ghcr.io/ullbergm/object-lease-controller:v0.2.6
-PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v0.2.6
+IMG ?= ghcr.io/ullbergm/object-lease-controller:v1.0.0
+PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v1.0.0
 
 # Build configurations
 CONTAINER_TOOL ?= docker
@@ -52,7 +52,7 @@ run: build ## Run the application locally
 		-version v1alpha2 \
 		-leader-elect \
 		-leader-elect-namespace default \
-		-opt-in-label-key "object-lease-controller.ullberg.us/enabled" \
+		-opt-in-label-key "object-lease-controller.ullberg.io/enabled" \
 		-opt-in-label-value true
 
 # =============================================================================

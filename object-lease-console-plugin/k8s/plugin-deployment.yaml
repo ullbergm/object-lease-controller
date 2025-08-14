@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: plugin
-          image: ghcr.io/ullbergm/object-lease-console-plugin:v0.2.6
+          image: ghcr.io/ullbergm/object-lease-console-plugin:v1.0.0
           imagePullPolicy: Always
           command: ["/usr/local/bin/run.sh"]
           ports:

@@ -1,6 +1,6 @@
 # Use the 'create api' subcommand to add watches to this file.
-- group: object-lease-controller.ullberg.us
-  version: v1alpha1
+- group: object-lease-controller.ullberg.io
+  version: v1
   kind: LeaseController
   chart: helm-charts/leasecontroller
 # +kubebuilder:scaffold:watch

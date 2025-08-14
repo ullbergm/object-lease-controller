@@ -23,10 +23,10 @@ import (
 // helpers
 func defaultAnn() Annotations {
 	return Annotations{
-		TTL:        "object-lease-controller.ullberg.us/ttl",
-		LeaseStart: "object-lease-controller.ullberg.us/lease-start",
-		ExpireAt:   "object-lease-controller.ullberg.us/expire-at",
-		Status:     "object-lease-controller.ullberg.us/lease-status",
+		TTL:        "object-lease-controller.ullberg.io/ttl",
+		LeaseStart: "object-lease-controller.ullberg.io/lease-start",
+		ExpireAt:   "object-lease-controller.ullberg.io/expire-at",
+		Status:     "object-lease-controller.ullberg.io/lease-status",
 	}
 }
 
