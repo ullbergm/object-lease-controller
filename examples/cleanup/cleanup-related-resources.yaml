@@ -42,18 +42,29 @@ data:
     echo "Deleting Deployments with label app=$APP_LABEL"
     kubectl delete deployment -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
     
-    # Optional: Clean up external resources
-    # Example: Delete S3 bucket data
-    # aws s3 rm "s3://app-data/$OBJECT_NAMESPACE/$APP_LABEL" --recursive
-    
-    # Example: Deregister from service mesh
-    # curl -X DELETE "https://service-mesh.example.com/api/v1/services/$APP_LABEL"
-    
     echo "Resource cleanup completed successfully"
     
     # List remaining resources for verification
     echo "Remaining resources with label app=$APP_LABEL:"
     kubectl get all -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" || echo "No resources found"
+    
+    # ⚠️  WARNING: Destructive external operations
+    # The following are commented examples of external cleanup operations.
+    # Uncomment and modify with extreme caution as they are irreversible.
+    #
+    # # DANGER: Delete S3 bucket data (cannot be undone without versioning)
+    # if [ -n "$AWS_S3_BUCKET" ]; then
+    #     echo "⚠️  WARNING: About to delete S3 data for s3://$AWS_S3_BUCKET/app-data/$OBJECT_NAMESPACE/$APP_LABEL"
+    #     echo "This operation is irreversible. Ensure backups exist before proceeding."
+    #     aws s3 rm "s3://$AWS_S3_BUCKET/app-data/$OBJECT_NAMESPACE/$APP_LABEL" --recursive
+    # fi
+    #
+    # # DANGER: Deregister from service mesh (may break service routing)
+    # if [ -n "$SERVICE_MESH_API" ]; then
+    #     echo "⚠️  WARNING: About to deregister $APP_LABEL from service mesh"
+    #     curl -X DELETE "$SERVICE_MESH_API/api/v1/services/$APP_LABEL" \
+    #         -H "Authorization: Bearer $SERVICE_MESH_TOKEN" || true
+    # fi
 
 ---
 # ServiceAccount with permissions to delete various resource types

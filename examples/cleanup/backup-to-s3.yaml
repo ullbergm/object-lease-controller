@@ -15,12 +15,6 @@ data:
     echo "Lease started: $LEASE_STARTED_AT"
     echo "Lease expired: $LEASE_EXPIRED_AT"
     
-    # Install kubectl if not present
-    if ! command -v kubectl &> /dev/null; then
-        echo "kubectl not found, installing..."
-        apt-get update && apt-get install -y kubectl
-    fi
-    
     # Fetch the object and save to local file
     BACKUP_FILE="/tmp/backup-${OBJECT_NAME}-$(date +%s).yaml"
     kubectl get $OBJECT_KIND $OBJECT_NAME -n $OBJECT_NAMESPACE -o yaml > "$BACKUP_FILE"
@@ -62,8 +56,8 @@ metadata:
     kubernetes.io/service-account.name: backup-sa
 type: Opaque
 stringData:
-  AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
-  AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  AWS_ACCESS_KEY_ID: "YOUR_AWS_ACCESS_KEY_ID"
+  AWS_SECRET_ACCESS_KEY: "YOUR_AWS_SECRET_ACCESS_KEY"
   AWS_DEFAULT_REGION: "us-east-1"
 
 ---
