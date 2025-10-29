@@ -9,9 +9,9 @@ data:
   notify-webhook.sh: |
     #!/bin/bash
     set -e
-    
+
     echo "Notifying webhook about deletion of $OBJECT_NAME"
-    
+
     # Prepare JSON payload
     PAYLOAD=$(cat <<EOF
     {
@@ -33,20 +33,20 @@ data:
     }
     EOF
     )
-    
+
     # Send webhook notification
     WEBHOOK_URL="${WEBHOOK_URL:-https://webhook.example.com/events}"
-    
+
     echo "Sending notification to $WEBHOOK_URL"
-    
+
     RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WEBHOOK_URL" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer ${WEBHOOK_TOKEN}" \
       -d "$PAYLOAD")
-    
+
     HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
     RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
-    
+
     if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
         echo "Webhook notification sent successfully (HTTP $HTTP_CODE)"
         echo "Response: $RESPONSE_BODY"
@@ -55,7 +55,7 @@ data:
         echo "Response: $RESPONSE_BODY"
         exit 1
     fi
-    
+
     echo "Notification completed successfully"
 
 ---
@@ -90,7 +90,7 @@ metadata:
   annotations:
     # Lease configuration
     object-lease-controller.ullberg.io/ttl: "30m"
-    
+
     # Cleanup job configuration - fire and forget
     object-lease-controller.ullberg.io/on-delete-job: "webhook-scripts/notify-webhook.sh"
     object-lease-controller.ullberg.io/job-image: "curlimages/curl:latest"
