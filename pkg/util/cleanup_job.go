@@ -120,8 +120,14 @@ func CreateCleanupJob(
 	leaseStartedAt, leaseExpiredAt time.Time,
 ) (*batchv1.Job, error) {
 	// Prepare environment variables
-	labels, _ := json.Marshal(obj.GetLabels())
-	annotations, _ := json.Marshal(obj.GetAnnotations())
+	labels, err := json.Marshal(obj.GetLabels())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal object labels to JSON: %w", err)
+	}
+	annotations, err := json.Marshal(obj.GetAnnotations())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal object annotations to JSON: %w", err)
+	}
 
 	envVars := []corev1.EnvVar{
 		{Name: "OBJECT_NAME", Value: obj.GetName()},
