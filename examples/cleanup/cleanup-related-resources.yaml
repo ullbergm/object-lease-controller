@@ -1,0 +1,177 @@
+---
+# ConfigMap containing the resource cleanup script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-cleanup-scripts
+  namespace: demo
+data:
+  cleanup-resources.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Cleaning up resources for $OBJECT_NAME in namespace $OBJECT_NAMESPACE"
+
+    # Parse labels to identify related resources
+    APP_LABEL=$(echo "$OBJECT_LABELS" | jq -r '.app // empty')
+
+    if [ -z "$APP_LABEL" ]; then
+        echo "No 'app' label found, using object name as selector"
+        APP_LABEL="$OBJECT_NAME"
+    fi
+
+    echo "Using label selector: app=$APP_LABEL"
+
+    # Delete related ConfigMaps
+    echo "Deleting ConfigMaps with label app=$APP_LABEL"
+    kubectl delete configmap -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
+
+    # Delete related Secrets (excluding service account tokens)
+    echo "Deleting Secrets with label app=$APP_LABEL"
+    kubectl delete secret -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
+
+    # Delete related PVCs
+    echo "Deleting PersistentVolumeClaims with label app=$APP_LABEL"
+    kubectl delete pvc -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
+
+    # Delete related Services
+    echo "Deleting Services with label app=$APP_LABEL"
+    kubectl delete service -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
+
+    # Delete related Deployments
+    echo "Deleting Deployments with label app=$APP_LABEL"
+    kubectl delete deployment -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" --ignore-not-found=true
+
+    echo "Resource cleanup completed successfully"
+
+    # List remaining resources for verification
+    echo "Remaining resources with label app=$APP_LABEL:"
+    kubectl get all -n "$OBJECT_NAMESPACE" -l "app=$APP_LABEL" || echo "No resources found"
+
+    # ⚠️  WARNING: Destructive external operations
+    # The following are commented examples of external cleanup operations.
+    # Uncomment and modify with extreme caution as they are irreversible.
+    #
+    # # DANGER: Delete S3 bucket data (cannot be undone without versioning)
+    # if [ -n "$AWS_S3_BUCKET" ]; then
+    #     echo "⚠️  WARNING: About to delete S3 data for s3://$AWS_S3_BUCKET/app-data/$OBJECT_NAMESPACE/$APP_LABEL"
+    #     echo "This operation is irreversible. Ensure backups exist before proceeding."
+    #     aws s3 rm "s3://$AWS_S3_BUCKET/app-data/$OBJECT_NAMESPACE/$APP_LABEL" --recursive
+    # fi
+    #
+    # # DANGER: Deregister from service mesh (may break service routing)
+    # if [ -n "$SERVICE_MESH_API" ]; then
+    #     echo "⚠️  WARNING: About to deregister $APP_LABEL from service mesh"
+    #     curl -X DELETE "$SERVICE_MESH_API/api/v1/services/$APP_LABEL" \
+    #         -H "Authorization: Bearer $SERVICE_MESH_TOKEN" || true
+    # fi
+
+---
+# ServiceAccount with permissions to delete various resource types
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resource-cleanup-sa
+  namespace: demo
+
+---
+# Role granting permissions to delete related resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: resource-cleanup-role
+  namespace: demo
+rules:
+- apiGroups: ["startpunkt.ullberg.us"]
+  resources: ["applications"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "services", "persistentvolumeclaims", "pods"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "delete"]
+
+---
+# RoleBinding connecting ServiceAccount to Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: resource-cleanup-binding
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: resource-cleanup-role
+subjects:
+- kind: ServiceAccount
+  name: resource-cleanup-sa
+  namespace: demo
+
+---
+# Example Application with resource cleanup
+apiVersion: startpunkt.ullberg.us/v1alpha2
+kind: Application
+metadata:
+  name: multi-resource-app
+  namespace: demo
+  labels:
+    app: multi-resource-app
+  annotations:
+    # Lease configuration
+    object-lease-controller.ullberg.io/ttl: "4h"
+
+    # Cleanup job configuration
+    object-lease-controller.ullberg.io/on-delete-job: "resource-cleanup-scripts/cleanup-resources.sh"
+    object-lease-controller.ullberg.io/job-image: "bitnami/kubectl:latest"
+    object-lease-controller.ullberg.io/job-service-account: "resource-cleanup-sa"
+    object-lease-controller.ullberg.io/job-wait: "true"
+    object-lease-controller.ullberg.io/job-timeout: "15m"
+    object-lease-controller.ullberg.io/job-ttl: "600"
+    object-lease-controller.ullberg.io/job-backoff-limit: "2"
+spec:
+  name: Multi-Resource Application
+  url: https://multi-resource.example.com
+  description: "Application with related resources that need cleanup"
+
+---
+# Example related ConfigMap (will be cleaned up)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: demo
+  labels:
+    app: multi-resource-app
+data:
+  config.yaml: |
+    setting: value
+
+---
+# Example related Secret (will be cleaned up)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+  namespace: demo
+  labels:
+    app: multi-resource-app
+type: Opaque
+stringData:
+  password: "secret-password"
+
+---
+# Example related PVC (will be cleaned up)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data
+  namespace: demo
+  labels:
+    app: multi-resource-app
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
