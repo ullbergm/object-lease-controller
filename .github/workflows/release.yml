@@ -239,26 +239,26 @@ jobs:
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
+
           if [ -n "$PREV_TAG" ]; then
             CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
           else
             CHANGES=$(git log --pretty=format:"- %s (%h)" --no-merges)
           fi
-          
+
           cat << EOF > release_notes.md
           ## Object Lease Controller v${VERSION}
-          
+
           ### Container Images
-          
+
           - **Controller**: \`${{ env.CONTROLLER_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
           - **Console Plugin**: \`${{ env.PLUGIN_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
           - **Operator**: \`${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
           - **Bundle**: \`${{ env.BUNDLE_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
           - **Catalog**: \`${{ env.CATALOG_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
-          
+
           ### Installation
-          
+
           #### Install Operator from Catalog
           \`\`\`bash
           kubectl apply -f - <<EOF
@@ -277,16 +277,16 @@ jobs:
                 interval: 10m
           EOF
           \`\`\`
-          
+
           #### Direct Deployment
           \`\`\`bash
           kubectl apply -k github.com/ullbergm/object-lease-controller/object-lease-operator/config/default?ref=${{ needs.prepare.outputs.version_tag }}
           \`\`\`
-          
+
           ### Changes
           ${CHANGES}
           EOF
-          
+
           cat release_notes.md
 
       - name: Create Release
