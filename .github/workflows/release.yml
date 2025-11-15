@@ -1,0 +1,300 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.1)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  CONTROLLER_IMAGE: ghcr.io/${{ github.repository }}
+  OPERATOR_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-operator-controller
+  PLUGIN_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-console-plugin
+  BUNDLE_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-operator-bundle
+  CATALOG_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-operator-catalog
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_tag: ${{ steps.version.outputs.version_tag }}
+    steps:
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version_tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Release version: ${VERSION}"
+
+  build-controller:
+    name: Build and Push Controller
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run Tests
+        run: make test
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Controller Image
+        run: |
+          make docker-buildx \
+            IMG=${{ env.CONTROLLER_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            PLATFORMS=linux/arm64,linux/amd64
+
+      - name: Tag Latest
+        run: |
+          docker buildx imagetools create \
+            ${{ env.CONTROLLER_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            --tag ${{ env.CONTROLLER_IMAGE }}:latest
+
+  build-plugin:
+    name: Build and Push Console Plugin
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: 'object-lease-console-plugin/yarn.lock'
+
+      - name: Install Dependencies
+        working-directory: object-lease-console-plugin
+        run: yarn install --frozen-lockfile
+
+      - name: Build Plugin
+        working-directory: object-lease-console-plugin
+        run: yarn build
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Plugin Image
+        run: |
+          make plugin-buildx \
+            PLUGIN_IMG=${{ env.PLUGIN_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            PLATFORMS=linux/arm64,linux/amd64
+
+      - name: Tag Latest
+        run: |
+          docker buildx imagetools create \
+            ${{ env.PLUGIN_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            --tag ${{ env.PLUGIN_IMAGE }}:latest
+
+  build-operator:
+    name: Build and Push Operator
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Operator Image
+        working-directory: object-lease-operator
+        run: |
+          make docker-buildx \
+            IMG=${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            VERSION=${{ needs.prepare.outputs.version }} \
+            PLATFORMS=linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+
+      - name: Tag Latest
+        run: |
+          docker buildx imagetools create \
+            ${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            --tag ${{ env.OPERATOR_IMAGE }}:latest
+
+  build-bundle:
+    name: Build and Push Operator Bundle
+    needs: [prepare, build-operator]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Bundle
+        working-directory: object-lease-operator
+        run: |
+          make bundle-push \
+            IMG=${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            BUNDLE_IMG=${{ env.BUNDLE_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            VERSION=${{ needs.prepare.outputs.version }}
+
+      - name: Tag Latest
+        run: |
+          docker buildx imagetools create \
+            ${{ env.BUNDLE_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            --tag ${{ env.BUNDLE_IMAGE }}:latest
+
+  build-catalog:
+    name: Build and Push Operator Catalog
+    needs: [prepare, build-bundle]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Catalog
+        working-directory: object-lease-operator
+        run: |
+          make catalog-push \
+            BUNDLE_IMGS=${{ env.BUNDLE_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            CATALOG_IMG=${{ env.CATALOG_IMAGE }}:${{ needs.prepare.outputs.version_tag }}
+
+      - name: Tag Latest
+        run: |
+          docker buildx imagetools create \
+            ${{ env.CATALOG_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
+            --tag ${{ env.CATALOG_IMAGE }}:latest
+
+  create-release:
+    name: Create GitHub Release
+    needs: [prepare, build-controller, build-plugin, build-operator, build-bundle, build-catalog]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$PREV_TAG" ]; then
+            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGES=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          cat << EOF > release_notes.md
+          ## Object Lease Controller v${VERSION}
+
+          ### Container Images
+
+          - **Controller**: \`${{ env.CONTROLLER_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
+          - **Console Plugin**: \`${{ env.PLUGIN_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
+          - **Operator**: \`${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
+          - **Bundle**: \`${{ env.BUNDLE_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
+          - **Catalog**: \`${{ env.CATALOG_IMAGE }}:${{ needs.prepare.outputs.version_tag }}\`
+
+          ### Installation
+
+          #### Install Operator from Catalog
+          \`\`\`bash
+          kubectl apply -f - <<EOF
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: CatalogSource
+          metadata:
+            name: object-lease-operator-catalog
+            namespace: openshift-marketplace
+          spec:
+            sourceType: grpc
+            image: ${{ env.CATALOG_IMAGE }}:latest
+            displayName: Object Lease Operator
+            publisher: ullbergm
+            updateStrategy:
+              registryPoll:
+                interval: 10m
+          EOF
+          \`\`\`
+
+          #### Direct Deployment
+          \`\`\`bash
+          kubectl apply -k github.com/ullbergm/object-lease-controller/object-lease-operator/config/default?ref=${{ needs.prepare.outputs.version_tag }}
+          \`\`\`
+
+          ### Changes
+          ${CHANGES}
+          EOF
+
+          cat release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version_tag }}
+          name: Release ${{ needs.prepare.outputs.version_tag }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
