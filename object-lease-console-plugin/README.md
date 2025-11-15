@@ -19,6 +19,19 @@ Run Bridge with plugin enabled (example):
 
 Then open the Console and visit /object-lease/leases.
 
+### TTL units and formatting
+
+The plugin shows the `object-lease-controller.ullberg.io/ttl` annotation value directly as provided on the resource. The controller (and the plugin) support a flexible duration format with case-insensitive units. Note the following rules:
+
+- `m` (or `M`) means minutes.
+- Use `mo`, `mth`, or `month` (case-insensitive) for months to avoid ambiguity with minutes.
+- Units can be combined and fractional values are supported, for example:
+  - `1h30m` (1 hour 30 minutes)
+  - `0.5d` (12 hours)
+  - `1mo2h` (one month and two hours)
+
+The plugin will display the TTL string you annotated; it does not reformat or normalize it. Use the controller's TTL parser rules when constructing values.
+
 ## Build image
 
 ```

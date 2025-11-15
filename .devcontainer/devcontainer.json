@@ -1,17 +1,21 @@
 {
-  "name": "Kubebuilder DevContainer",
-  "image": "golang:1.25",
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/git:1": {}
+  "name": "DevContainer",
+  "build": {
+    "dockerfile": "Dockerfile"
   },
-
-  "runArgs": ["--network=host"],
-
+  "postAttachCommand": [
+    "/bin/bash",
+    ".devcontainer/post-install.sh"
+  ],
   "customizations": {
     "vscode": {
       "settings": {
-        "terminal.integrated.shell.linux": "/bin/bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash"
+          }
+        }
       },
       "extensions": [
         "golang.Go",
@@ -20,7 +24,5 @@
         "ms-kubernetes-tools.vscode-kubernetes-tools"
       ]
     }
-  },
-
-  "onCreateCommand": "bash .devcontainer/post-install.sh"
+  }
 }
