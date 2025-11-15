@@ -65,6 +65,9 @@ func (e *erroringClient) DeleteAllOf(ctx context.Context, obj crclient.Object, o
 func (e *erroringClient) List(ctx context.Context, list crclient.ObjectList, opts ...crclient.ListOption) error {
 	return e.client.List(ctx, list, opts...)
 }
+func (e *erroringClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...crclient.ApplyOption) error {
+	return e.client.Apply(ctx, obj, opts...)
+}
 func (e *erroringClient) Status() crclient.SubResourceWriter { return e.client.Status() }
 func (e *erroringClient) SubResource(s string) crclient.SubResourceClient {
 	return e.client.SubResource(s)
