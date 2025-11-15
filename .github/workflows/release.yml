@@ -241,6 +241,8 @@ jobs:
     name: Create GitHub Release
     needs: [prepare, build-controller, build-plugin, build-operator, build-bundle, build-catalog]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
