@@ -77,16 +77,21 @@ This will allow you to configure the time until the object will be deleted.
 kubectl annotate pod test object-lease-controller.ullberg.io/ttl=1h30m
 ```
 
-You can specify the time in hours, minutes, days, weeks, etc.
+You can specify the time in hours, minutes, days, weeks, months, years, etc. Units are case-insensitive.
+
+Important: `m` always means minutes. To express months, use `mo`, `mth` or `month` (all case-insensitive) — this avoids ambiguity with `m` (minutes). Fractions and combinations are supported (for example `1h30m`, `0.5d`, or `1mo2h`).
 
 | Value   | Description      |
 |---------|------------------|
 | `2d`    | 2 days           |
 | `1h30m` | 1 hour 30 minutes|
 | `5m`    | 5 minutes        |
+| `1mo`   | 1 month (30 days)|
 | `1w`    | 1 week           |
 | `3h`    | 3 hours          |
 | `10s`   | 10 seconds       |
+
+Note: `mo`, `mth`, and `month` are interchangeable; `m` and `M` both represent minutes. For months use `mo` to keep units unambiguous.
 
 ### object-lease-controller.ullberg.io/lease-start
 
@@ -106,6 +111,19 @@ kubectl annotate pod test object-lease-controller.ullberg.io/lease-start- --over
 
 # Set a specific start time
 kubectl annotate pod test object-lease-controller.ullberg.io/lease-start=2025-01-01T12:00:00Z --overwrite
+```
+
+More TTL examples:
+
+```bash
+# 30 minutes
+kubectl annotate pod test object-lease-controller.ullberg.io/ttl=30m
+
+# 1 month and 2 hours (month token: 'mo')
+kubectl annotate pod test object-lease-controller.ullberg.io/ttl=1mo2h
+
+# Fractional units — 12 hours
+kubectl annotate pod test object-lease-controller.ullberg.io/ttl=0.5d
 ```
 
 ### object-lease-controller.ullberg.io/expire-at

@@ -15,12 +15,16 @@ func TestParseFlexibleDuration(t *testing.T) {
 		{"4h", 4 * time.Hour, false},
 		{"2d", 48 * time.Hour, false},
 		{"1w", 7 * 24 * time.Hour, false},
-		{"1M", 30 * 24 * time.Hour, false},
+		{"1mo", 30 * 24 * time.Hour, false},
+		{"1Mo", 30 * 24 * time.Hour, false},
+		{"1MO", 30 * 24 * time.Hour, false},
 		{"1y", 365 * 24 * time.Hour, false},
+		{"0.5mo", time.Duration(0.5 * 30 * 24 * float64(time.Hour)), false},
 
 		// fractional
 		{"1.5h", time.Duration(1.5 * float64(time.Hour)), false},
 		{"0.5d", time.Duration(0.5 * 24 * float64(time.Hour)), false},
+		{"20m", 20 * time.Minute, false},
 
 		// combinations (order and spaces)
 		{"1w2d3h", (7*24 + 2*24 + 3) * time.Hour, false},
@@ -34,6 +38,18 @@ func TestParseFlexibleDuration(t *testing.T) {
 		{"", 0, true},
 		{"abc", 0, true},
 		{"10x", 0, true},
+		// missing unit
+		{"10", 0, true},
+		// micro symbols (greek and micro sign)
+		{"10µs", 10 * time.Microsecond, false},
+		{"5μs", 5 * time.Microsecond, false},
+		// month aliases
+		{"3mth", 3 * 30 * 24 * time.Hour, false},
+		{"2month", 2 * 30 * 24 * time.Hour, false},
+		// time.ParseDuration path with ns/ms
+		{"15ms", 15 * time.Millisecond, false},
+		{"100ns", 100 * time.Nanosecond, false},
+		{"1mo2h", 30*24*time.Hour + 2*time.Hour, false},
 	}
 
 	for _, tt := range tests {
