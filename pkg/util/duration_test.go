@@ -1,6 +1,7 @@
 package util
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -69,5 +70,20 @@ func TestParseFlexibleDuration(t *testing.T) {
 				t.Errorf("ParseFlexibleDuration(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParseFlexibleDuration_RangeErrors(t *testing.T) {
+	t.Parallel()
+
+	// Extremely large number should cause ParseDuration to fail with range error.
+	big := strings.Repeat("9", 400)
+	if _, err := ParseFlexibleDuration(big + "h"); err == nil {
+		t.Fatalf("expected range error for extremely large duration number using time.ParseDuration")
+	}
+
+	// For custom units that use strconv.ParseFloat downstream, similarly expect an error
+	if _, err := ParseFlexibleDuration(big + "d"); err == nil {
+		t.Fatalf("expected range error for extremely large duration number using custom parse path")
 	}
 }

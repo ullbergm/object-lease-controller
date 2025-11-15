@@ -39,6 +39,7 @@ vet: ## Vet Go code
 .PHONY: test
 test: tidy fmt vet ## Run tests with coverage
 	go test ./... -race -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o=coverage.html
 
 .PHONY: build
 build: tidy fmt vet test ## Build the binary

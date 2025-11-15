@@ -2,22 +2,37 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"object-lease-controller/pkg/util"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"net/http"
+	ometrics "object-lease-controller/pkg/metrics"
+
+	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	controller_runtime "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // helpers
@@ -174,6 +189,14 @@ func TestOnlyWithTTLAnnotation_Update(t *testing.T) {
 	if pred.UpdateFunc(evBad) {
 		t.Errorf("UpdateFunc(wrong types) = true, want false")
 	}
+
+	// TTL added should trigger
+	old := makeObj(nil)
+	newWithTTL := makeObj(map[string]string{a.TTL: "2h"})
+	evAdd := event.UpdateEvent{ObjectOld: old, ObjectNew: newWithTTL}
+	if !pred.UpdateFunc(evAdd) {
+		t.Errorf("UpdateFunc(TTL added) = false, want true")
+	}
 }
 
 func TestOnlyWithTTLAnnotation_Delete_Generic(t *testing.T) {
@@ -185,6 +208,244 @@ func TestOnlyWithTTLAnnotation_Delete_Generic(t *testing.T) {
 	}
 	if pred.GenericFunc(event.GenericEvent{}) {
 		t.Error("GenericFunc always false")
+	}
+}
+
+func TestOnlyWithTTLAnnotation_Create_NonUnstructured(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+
+	// Use a core type that is not *unstructured.Unstructured
+	pod := &corev1.Pod{}
+	ev := event.CreateEvent{Object: pod}
+	if pred.CreateFunc(ev) {
+		t.Errorf("CreateFunc(non-Unstructured) = true, want false")
+	}
+}
+
+func TestGetObject_SetsEmptyAnnotationsWhenNil(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
+	u := &unstructured.Unstructured{}
+	setMeta(u, gvk, "default", "noanns")
+	// Start with nil annotations
+	u.SetAnnotations(nil)
+
+	r, _, _ := newWatcher(t, gvk, u)
+	obj, err := r.getObject(context.Background(), client.ObjectKey{Namespace: "default", Name: "noanns"})
+	if err != nil {
+		t.Fatalf("getObject error: %v", err)
+	}
+	if obj.GetAnnotations() == nil {
+		t.Fatalf("expect annotations to be non-nil after getObject")
+	}
+	if len(obj.GetAnnotations()) != 0 {
+		t.Fatalf("expected empty map, got %v", obj.GetAnnotations())
+	}
+
+	// Also ensure that getObject returns NotFound as client.IgnoreNotFound would
+	r2, _, _ := newWatcher(t, gvk /* no objects */)
+	_, err = r2.getObject(context.Background(), client.ObjectKey{Namespace: "none", Name: "missing"})
+	if err == nil {
+		t.Fatalf("expected error for missing object, got nil")
+	}
+}
+
+func TestCleanupLeaseAnnotations_NoChange(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "clean-me")
+	obj.SetAnnotations(map[string]string{"foo": "bar"})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	// call cleanup with no TTL present -- should return early without error
+	r.cleanupLeaseAnnotations(context.Background(), obj)
+	// ensure unchanged
+	cur := get(t, r.Client, gvk, "default", "clean-me")
+	if cur.GetAnnotations()["foo"] != "bar" {
+		t.Fatalf("unexpected change to annotations: %v", cur.GetAnnotations())
+	}
+}
+
+func TestUpdateAnnotations_HandlesNilAnnotations(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "patch")
+	obj.SetAnnotations(nil)
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.updateAnnotations(context.Background(), obj, map[string]string{"a": "b"})
+	got := get(t, r.Client, gvk, "default", "patch")
+	if got.GetAnnotations()["a"] != "b" {
+		t.Fatalf("expected updated annotation, got %v", got.GetAnnotations())
+	}
+}
+
+// withIsolatedRegistry is copied from metrics_test.go to allow test isolation
+func withIsolatedRegistry(t *testing.T) *prometheus.Registry {
+	t.Helper()
+	old := crmetrics.Registry
+	reg := prometheus.NewRegistry()
+	crmetrics.Registry = reg
+	t.Cleanup(func() { crmetrics.Registry = old })
+	return reg
+}
+
+func TestEnsureLeaseStart_RecordsAndIncrementsMetrics(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	reg := withIsolatedRegistry(t)
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "es1")
+	obj.SetAnnotations(map[string]string{})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+	r.Recorder = record.NewFakeRecorder(10)
+
+	now := time.Now().UTC()
+	_ = r.ensureLeaseStart(context.Background(), obj, now)
+
+	// Ensure the LeasesStarted metric incremented
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	found := false
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_leases_started_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("expected leases_started_total > 0, got %v", mf.Metric[0].GetCounter().GetValue())
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("leases_started_total metric not found")
+	}
+}
+
+func TestMarkInvalidTTL_RecordsAndIncrementsMetrics(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	reg := withIsolatedRegistry(t)
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "badttl")
+	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "not-a-ttl"})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+	r.Recorder = record.NewFakeRecorder(10)
+
+	r.markInvalidTTL(context.Background(), obj, fmt.Errorf("boom"))
+
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_invalid_ttl_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("invalid_ttl_total should be incremented")
+			}
+			return
+		}
+	}
+	t.Fatalf("invalid_ttl_total not found in metrics")
+}
+
+// captureClientErr forces Delete to return an error
+type captureClientErr struct {
+	client.Client
+	forceErr error
+}
+
+func (c *captureClientErr) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if c.forceErr != nil {
+		return c.forceErr
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func TestHandleExpired_PropagatesDeleteErrorAndIncrementsMetrics(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "will-delete")
+	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "1s", defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)})
+
+	r, cl, _ := newWatcher(t, gvk, obj)
+	cc := &captureClientErr{Client: cl, forceErr: fmt.Errorf("boom")}
+	r.Client = cc
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err == nil {
+		t.Fatalf("expected error from handleExpired due to delete failure")
+	}
+}
+
+func TestHandleExpired_RecordsEventAndIncrementsMetrics(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "delete-ok")
+	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "1s", defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)})
+
+	reg := withIsolatedRegistry(t)
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+	r.Recorder = record.NewFakeRecorder(1)
+
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// event was recorded
+	select {
+	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		if !strings.Contains(ev, "LeaseExpired") {
+			t.Fatalf("unexpected event: %v", ev)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected LeaseExpired event but none found")
+	}
+
+	// metric incremented
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_leases_expired_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("leases_expired_total should be incremented")
+			}
+			return
+		}
+	}
+	t.Fatalf("leases_expired_total not found in metrics")
+}
+
+func TestOnlyWithTTLAnnotation_Update_NilOldOrNew(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	r, _, _ := newWatcher(t, gvk)
+	pred := r.onlyWithTTLAnnotation()
+
+	// ObjectOld nil
+	evOldNil := event.UpdateEvent{ObjectOld: nil, ObjectNew: makeObj(map[string]string{"foo": "bar"})}
+	if pred.UpdateFunc(evOldNil) {
+		t.Errorf("UpdateFunc(ObjectOld=nil) = true, want false")
+	}
+
+	// ObjectNew nil
+	evNewNil := event.UpdateEvent{ObjectOld: makeObj(map[string]string{"foo": "bar"}), ObjectNew: nil}
+	if pred.UpdateFunc(evNewNil) {
+		t.Errorf("UpdateFunc(ObjectNew=nil) = true, want false")
 	}
 }
 
@@ -749,3 +1010,183 @@ func TestHandleNamespaceEvents_ProcessesMultipleObjectsInAddedNamespace(t *testi
 		t.Fatalf("object without TTL should be ignored, got expire-at=%q", v)
 	}
 }
+
+func TestCleanupLeaseAnnotations_RecordsEvent(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "clean-me-event")
+	obj.SetAnnotations(map[string]string{"foo": "bar", defaultAnn().ExpireAt: "x", defaultAnn().Status: "y"})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Recorder = record.NewFakeRecorder(1)
+	// remove TTL to trigger cleanup flow
+	r.cleanupLeaseAnnotations(context.Background(), obj)
+	select {
+	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		if !strings.Contains(ev, "Removed lease annotations") {
+			t.Fatalf("unexpected event: %v", ev)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected event for cleaned annotations but none found")
+	}
+}
+
+func TestEnsureLeaseStart_RecordsOnInvalidLeaseStart(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "invalid-start")
+	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "1h", defaultAnn().LeaseStart: "not-a-time"})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Recorder = record.NewFakeRecorder(1)
+	now := time.Now().UTC()
+	_ = r.ensureLeaseStart(context.Background(), obj, now)
+	select {
+	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		if !strings.Contains(ev, "LeaseStartReset") {
+			t.Fatalf("unexpected event: %v", ev)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected LeaseStartReset event but none found")
+	}
+}
+
+// Use erroringClient type defined in namespace_controller_test.go
+
+func TestReconcile_MetricsOnError(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	u := &unstructured.Unstructured{}
+	setMeta(u, gvk, "default", "e1")
+	u.SetAnnotations(map[string]string{defaultAnn().TTL: "1h"})
+
+	// base client holds the object listed by handleNamespaceEvents
+	base := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).WithObjects(u).Build()
+	// watcher uses erroring client for reconcile
+	r := &LeaseWatcher{Client: &erroringClient{client: base, err: fmt.Errorf("boom")}, GVK: gvk, Annotations: defaultAnn()}
+	// metrics enabled
+	reg := withIsolatedRegistry(t)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+
+	_, err := r.Reconcile(context.Background(), controller_runtime.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "e1"}})
+	if err == nil {
+		t.Fatalf("expected error from reconcile, got nil")
+	}
+
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	// reconcile_errors_total should be > 0
+	found := false
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_reconcile_errors_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("reconcile_errors_total should be >0")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("reconcile_errors_total metric missing")
+	}
+}
+
+func TestHandleNamespaceEvents_LogsOnReconcileError(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	withTTL := &unstructured.Unstructured{}
+	setMeta(withTTL, gvk, "ns-e", "cm-ttl")
+	withTTL.SetAnnotations(map[string]string{defaultAnn().TTL: "30m"})
+
+	// base client has object; handleNamespaceEvents uses manager client for listing
+	base := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).WithObjects(withTTL).Build()
+
+	// r.Reconcile will use a client that always returns error on Get
+	r, _, _ := newWatcher(t, gvk, withTTL)
+	r.Client = &erroringClient{client: base, err: fmt.Errorf("boom")}
+
+	// event channel
+	r.eventChan = make(chan util.NamespaceChangeEvent, 1)
+	go r.handleNamespaceEvents(stubMgr{c: base})
+
+	// send Added event - list should succeed but reconcile should error and be logged
+	r.eventChan <- util.NamespaceChangeEvent{Namespace: "ns-e", Change: util.NamespaceAdded}
+	close(r.eventChan)
+
+	// wait a bit for goroutine to execute
+	time.Sleep(200 * time.Millisecond)
+}
+
+func TestSetupWithManager_InitializesMetricsAndTracker(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	// isolate metrics registry to avoid global conflicts
+	reg := withIsolatedRegistry(t)
+
+	// create watcher with tracker
+	tr := util.NewNamespaceTracker()
+	r := &LeaseWatcher{Client: fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build(), GVK: gvk, Tracker: tr, Annotations: defaultAnn()}
+
+	// fake manager with scheme
+	scheme := runtime.NewScheme()
+	scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+	mov := &fakeManager{client: r.Client, scheme: scheme}
+
+	// Should not panic or return error
+	if err := r.SetupWithManager(mov); err != nil {
+		t.Fatalf("SetupWithManager failed: %v", err)
+	}
+
+	if r.Metrics == nil {
+		t.Fatalf("expected metrics to be initialized")
+	}
+	if r.eventChan == nil {
+		t.Fatalf("expected eventChan to be created when tracker present")
+	}
+
+	// Sanity: confirm the info metric family is registered
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	found := false
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_info" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected info metric to be registered")
+	}
+}
+
+// A minimal fake manager implementing manager.Manager with no-op methods for testing SetupWithManager
+type fakeManager struct {
+	client client.Client
+	scheme *runtime.Scheme
+}
+
+func (f *fakeManager) GetClient() client.Client             { return f.client }
+func (f *fakeManager) GetScheme() *runtime.Scheme           { return f.scheme }
+func (f *fakeManager) GetConfig() *rest.Config              { return &rest.Config{} }
+func (f *fakeManager) GetHTTPClient() *http.Client          { return &http.Client{} }
+func (f *fakeManager) GetCache() cache.Cache                { return nil }
+func (f *fakeManager) GetFieldIndexer() client.FieldIndexer { return nil }
+func (f *fakeManager) GetEventRecorderFor(name string) record.EventRecorder {
+	return record.NewFakeRecorder(10)
+}
+func (f *fakeManager) GetRESTMapper() meta.RESTMapper {
+	return meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "", Version: "v1"}})
+}
+func (f *fakeManager) GetAPIReader() client.Reader     { return f.client }
+func (f *fakeManager) Start(ctx context.Context) error { return nil }
+
+func (f *fakeManager) Add(r manager.Runnable) error { return nil }
+func (f *fakeManager) Elected() <-chan struct{}     { return make(chan struct{}) }
+func (f *fakeManager) AddMetricsServerExtraHandler(path string, handler http.Handler) error {
+	return nil
+}
+func (f *fakeManager) AddHealthzCheck(name string, check healthz.Checker) error { return nil }
+func (f *fakeManager) AddReadyzCheck(name string, check healthz.Checker) error  { return nil }
+func (f *fakeManager) GetWebhookServer() webhook.Server                         { return nil }
+func (f *fakeManager) GetLogger() logr.Logger                                   { return logr.Discard() }
+func (f *fakeManager) GetControllerOptions() config.Controller                  { return config.Controller{} }
