@@ -106,6 +106,21 @@
             "semanticCommitType": "fix",
             "semanticCommitScope": "npm",
             "addLabels": ["renovate/npm"]
+        },
+        {
+            "matchManagers": ["npm"],
+            "matchPackagePatterns": ["^@openshift-console/"],
+            "matchPaths": ["object-lease-console-plugin/**"],
+            "groupName": "OpenShift Console SDK",
+            "groupSlug": "openshift-console-sdk",
+            "addLabels": ["renovate/npm", "renovate/openshift-sdk"]
+        },
+        {
+            "matchManagers": ["npm"],
+            "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+            "matchPaths": ["object-lease-console-plugin/**"],
+            "enabled": false,
+            "addLabels": ["renovate/npm", "renovate/blocked"]
         }
     ]
 }
