@@ -47,6 +47,9 @@ jobs:
     name: Build and Push Controller
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +91,9 @@ jobs:
     name: Build and Push Console Plugin
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -134,6 +140,9 @@ jobs:
     name: Build and Push Operator
     needs: [prepare, build-controller]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,6 +178,9 @@ jobs:
     name: Build and Push Operator Bundle
     needs: [prepare, build-operator]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -198,6 +210,9 @@ jobs:
     name: Build and Push Operator Catalog
     needs: [prepare, build-bundle]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
