@@ -211,3 +211,20 @@ func TestReconcile_ClientErrorBubblesUp(t *testing.T) {
 		t.Fatalf("expected tracker to still contain namespace ns on error")
 	}
 }
+
+func TestSetupWithManager_DoesNotError(t *testing.T) {
+	scheme := newScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	r := &NamespaceReconciler{
+		Client:     cl,
+		LabelKey:   "watch/enabled",
+		LabelValue: "true",
+		Tracker:    util.NewNamespaceTracker(),
+	}
+
+	mov := &fakeManager{client: r.Client, scheme: scheme}
+	if err := r.SetupWithManager(mov); err != nil {
+		t.Fatalf("SetupWithManager failed: %v", err)
+	}
+}
