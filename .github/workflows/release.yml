@@ -96,12 +96,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'yarn'
-          cache-dependency-path: 'object-lease-console-plugin/yarn.lock'
 
       - name: Install Dependencies
         working-directory: object-lease-console-plugin
-        run: yarn install --frozen-lockfile
+        run: yarn install
 
       - name: Build Plugin
         working-directory: object-lease-console-plugin
@@ -134,7 +132,7 @@ jobs:
 
   build-operator:
     name: Build and Push Operator
-    needs: prepare
+    needs: [prepare, build-controller]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
