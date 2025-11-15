@@ -1,126 +1,219 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-        "config:recommended",
-        ":dependencyDashboard",
-        ":semanticCommits",
-        ":maintainLockFilesWeekly"
+    $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+    extends: [
+        'config:recommended',
+        ':dependencyDashboard',
+        ':semanticCommits',
+        ':maintainLockFilesWeekly',
     ],
-    "commitMessageTopic": "{{depName}}",
-    "commitMessageExtra": "to {{newVersion}}",
-    "commitMessageSuffix": "",
-    "labels": [
-        "dependencies"
+    commitMessageTopic: '{{depName}}',
+    commitMessageExtra: 'to {{newVersion}}',
+    commitMessageSuffix: '',
+    labels: [
+        'dependencies',
     ],
-    "ignorePaths": [
-        "object-lease-operator/config/manager/kustomization.yaml"
+    ignorePaths: [
+        'object-lease-operator/config/manager/kustomization.yaml',
     ],
-    "schedule": [
-        "before 6am on monday"
+    schedule: [
+        'before 6am on monday',
     ],
-    "timezone": "UTC",
-    "prConcurrentLimit": 3,
-    "prHourlyLimit": 2,
-    "packageRules": [
+    timezone: 'UTC',
+    prConcurrentLimit: 3,
+    prHourlyLimit: 2,
+    packageRules: [
         {
-            "matchDatasources": ["go", "golang-version"],
-            "matchUpdateTypes": ["major"],
-            "commitMessagePrefix": "feat(go)!: ",
-            "addLabels": ["renovate/go"]
+            matchDatasources: [
+                'go',
+                'golang-version',
+            ],
+            matchUpdateTypes: [
+                'major',
+            ],
+            commitMessagePrefix: 'feat(go)!: ',
+            addLabels: [
+                'renovate/go',
+            ],
         },
         {
-            "matchDatasources": ["go", "golang-version"],
-            "matchUpdateTypes": ["minor"],
-            "semanticCommitType": "feat",
-            "semanticCommitScope": "go",
-            "addLabels": ["renovate/go"]
+            matchDatasources: [
+                'go',
+                'golang-version',
+            ],
+            matchUpdateTypes: [
+                'minor',
+            ],
+            semanticCommitType: 'feat',
+            semanticCommitScope: 'go',
+            addLabels: [
+                'renovate/go',
+            ],
         },
         {
-            "matchDatasources": ["go", "golang-version"],
-            "matchUpdateTypes": ["patch"],
-            "semanticCommitType": "fix",
-            "semanticCommitScope": "go",
-            "addLabels": ["renovate/go"]
+            matchDatasources: [
+                'go',
+                'golang-version',
+            ],
+            matchUpdateTypes: [
+                'patch',
+            ],
+            semanticCommitType: 'fix',
+            semanticCommitScope: 'go',
+            addLabels: [
+                'renovate/go',
+            ],
         },
         {
-            "matchDatasources": ["docker"],
-            "commitMessageTopic": "container image {{depName}}",
-            "addLabels": ["renovate/container"]
+            matchDatasources: [
+                'docker',
+            ],
+            commitMessageTopic: 'container image {{depName}}',
+            addLabels: [
+                'renovate/container',
+            ],
         },
         {
-            "matchDatasources": ["docker"],
-            "matchUpdateTypes": ["major"],
-            "commitMessagePrefix": "feat(container)!: "
+            matchDatasources: [
+                'docker',
+            ],
+            matchUpdateTypes: [
+                'major',
+            ],
+            commitMessagePrefix: 'feat(container)!: ',
         },
         {
-            "matchDatasources": ["docker"],
-            "matchUpdateTypes": ["minor"],
-            "semanticCommitType": "feat",
-            "semanticCommitScope": "container"
+            matchDatasources: [
+                'docker',
+            ],
+            matchUpdateTypes: [
+                'minor',
+            ],
+            semanticCommitType: 'feat',
+            semanticCommitScope: 'container',
         },
         {
-            "matchDatasources": ["docker"],
-            "matchUpdateTypes": ["digest", "patch"],
-            "semanticCommitType": "fix",
-            "semanticCommitScope": "container"
+            matchDatasources: [
+                'docker',
+            ],
+            matchUpdateTypes: [
+                'digest',
+                'patch',
+            ],
+            semanticCommitType: 'fix',
+            semanticCommitScope: 'container',
         },
         {
-            "matchManagers": ["github-actions"],
-            "addLabels": ["renovate/github-action"],
-            "groupName": "all github actions",
-            "groupSlug": "all-github"
+            matchManagers: [
+                'github-actions',
+            ],
+            addLabels: [
+                'renovate/github-action',
+            ],
+            groupName: 'all github actions',
+            groupSlug: 'all-github',
         },
         {
-            "matchManagers": ["github-actions"],
-            "matchUpdateTypes": ["major"],
-            "commitMessagePrefix": "feat(github-action)!: "
+            matchManagers: [
+                'github-actions',
+            ],
+            matchUpdateTypes: [
+                'major',
+            ],
+            commitMessagePrefix: 'feat(github-action)!: ',
         },
         {
-            "matchManagers": ["github-actions"],
-            "matchUpdateTypes": ["minor"],
-            "semanticCommitType": "feat",
-            "semanticCommitScope": "github-action"
+            matchManagers: [
+                'github-actions',
+            ],
+            matchUpdateTypes: [
+                'minor',
+            ],
+            semanticCommitType: 'feat',
+            semanticCommitScope: 'github-action',
         },
         {
-            "matchManagers": ["github-actions"],
-            "matchUpdateTypes": ["patch"],
-            "semanticCommitType": "fix",
-            "semanticCommitScope": "github-action"
+            matchManagers: [
+                'github-actions',
+            ],
+            matchUpdateTypes: [
+                'patch',
+            ],
+            semanticCommitType: 'fix',
+            semanticCommitScope: 'github-action',
         },
         {
-            "matchManagers": ["npm"],
-            "matchUpdateTypes": ["major"],
-            "commitMessagePrefix": "feat(npm)!: ",
-            "addLabels": ["renovate/npm"]
+            matchManagers: [
+                'npm',
+            ],
+            matchUpdateTypes: [
+                'major',
+            ],
+            commitMessagePrefix: 'feat(npm)!: ',
+            addLabels: [
+                'renovate/npm',
+            ],
         },
         {
-            "matchManagers": ["npm"],
-            "matchUpdateTypes": ["minor"],
-            "semanticCommitType": "feat",
-            "semanticCommitScope": "npm",
-            "addLabels": ["renovate/npm"]
+            matchManagers: [
+                'npm',
+            ],
+            matchUpdateTypes: [
+                'minor',
+            ],
+            semanticCommitType: 'feat',
+            semanticCommitScope: 'npm',
+            addLabels: [
+                'renovate/npm',
+            ],
         },
         {
-            "matchManagers": ["npm"],
-            "matchUpdateTypes": ["patch"],
-            "semanticCommitType": "fix",
-            "semanticCommitScope": "npm",
-            "addLabels": ["renovate/npm"]
+            matchManagers: [
+                'npm',
+            ],
+            matchUpdateTypes: [
+                'patch',
+            ],
+            semanticCommitType: 'fix',
+            semanticCommitScope: 'npm',
+            addLabels: [
+                'renovate/npm',
+            ],
         },
         {
-            "matchManagers": ["npm"],
-            "matchPackagePatterns": ["^@openshift-console/"],
-            "matchPaths": ["object-lease-console-plugin/**"],
-            "groupName": "OpenShift Console SDK",
-            "groupSlug": "openshift-console-sdk",
-            "addLabels": ["renovate/npm", "renovate/openshift-sdk"]
+            matchManagers: [
+                'npm',
+            ],
+            matchFileNames: [
+                'object-lease-console-plugin/**',
+            ],
+            groupName: 'OpenShift Console SDK',
+            groupSlug: 'openshift-console-sdk',
+            addLabels: [
+                'renovate/npm',
+                'renovate/openshift-sdk',
+            ],
+            matchPackageNames: [
+                '/^@openshift-console//',
+            ],
         },
         {
-            "matchManagers": ["npm"],
-            "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
-            "matchPaths": ["object-lease-console-plugin/**"],
-            "enabled": false,
-            "addLabels": ["renovate/npm", "renovate/blocked"]
-        }
-    ]
+            matchManagers: [
+                'npm',
+            ],
+            matchPackageNames: [
+                'react',
+                'react-dom',
+                '@types/react',
+                '@types/react-dom',
+            ],
+            matchFileNames: [
+                'object-lease-console-plugin/**',
+            ],
+            enabled: false,
+            addLabels: [
+                'renovate/npm',
+                'renovate/blocked',
+            ],
+        },
+    ],
 }
