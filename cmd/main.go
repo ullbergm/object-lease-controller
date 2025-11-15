@@ -228,7 +228,7 @@ func parseLeaderElectionConfig(enableLeaderElection bool, leaderElectionNamespac
 			var err error
 			enableLeaderElection, err = strconv.ParseBool(val)
 			if err != nil {
-				return false, "", fmt.Errorf("Invalid LEASE_LEADER_ELECTION value: %v", err)
+				return false, "", fmt.Errorf("Invalid LEASE_LEADER_ELECTION value: %v", err) //lint:ignore ST1005
 			}
 
 			if enableLeaderElection && leaderElectionNamespace == "" {
@@ -237,7 +237,7 @@ func parseLeaderElectionConfig(enableLeaderElection bool, leaderElectionNamespac
 
 			if enableLeaderElection && leaderElectionNamespace == "" {
 				if _, err := statFn("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); os.IsNotExist(err) {
-					return false, "", fmt.Errorf("Leader election enabled but LEASE_LEADER_ELECTION_NAMESPACE is not set. Please set it to a valid namespace.")
+					return false, "", fmt.Errorf("Leader election enabled but LEASE_LEADER_ELECTION_NAMESPACE is not set. Please set it to a valid namespace.") //lint:ignore ST1005
 				}
 				// we're in a cluster; default to serviceaccount namespace
 				if data, err := readFileFn("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
