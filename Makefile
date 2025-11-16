@@ -36,6 +36,10 @@ fmt: ## Format Go code
 vet: ## Vet Go code
 	go vet ./...
 
+.PHONY: lint
+lint: ## Run golangci-lint (requires golangci-lint installed)
+	golangci-lint run
+
 .PHONY: test
 test: tidy fmt vet ## Run tests with coverage
 	go test ./... -race -coverprofile=coverage.out

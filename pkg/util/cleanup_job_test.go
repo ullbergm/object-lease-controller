@@ -392,9 +392,9 @@ func TestWaitForJobCompletion_Success(t *testing.T) {
 		},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 
-	err := WaitForJobCompletion(context.Background(), client, job, 10*time.Second)
+	err := WaitForJobCompletion(context.Background(), cl, job, 10*time.Second)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -414,9 +414,9 @@ func TestWaitForJobCompletion_Timeout(t *testing.T) {
 		},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 
-	err := WaitForJobCompletion(context.Background(), client, job, 1*time.Second)
+	err := WaitForJobCompletion(context.Background(), cl, job, 1*time.Second)
 	if err == nil {
 		t.Errorf("Expected timeout error, got nil")
 	}
@@ -442,9 +442,9 @@ func TestWaitForJobCompletion_Failed(t *testing.T) {
 		},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 
-	err := WaitForJobCompletion(context.Background(), client, job, 10*time.Second)
+	err := WaitForJobCompletion(context.Background(), cl, job, 10*time.Second)
 	if err == nil {
 		t.Errorf("Expected job failed error, got nil")
 	}
