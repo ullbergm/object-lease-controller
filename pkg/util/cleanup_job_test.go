@@ -205,7 +205,7 @@ func TestCreateCleanupJob(t *testing.T) {
 	_ = batchv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-obj")
@@ -235,7 +235,7 @@ func TestCreateCleanupJob(t *testing.T) {
 	leaseStart := time.Now().Add(-1 * time.Hour)
 	leaseExpire := time.Now()
 
-	job, err := CreateCleanupJob(context.Background(), client, obj, gvk, config, leaseStart, leaseExpire)
+	job, err := CreateCleanupJob(context.Background(), cl, obj, gvk, config, leaseStart, leaseExpire)
 	if err != nil {
 		t.Fatalf("Failed to create cleanup job: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestCreateCleanupJob_LabelsMarshalError(t *testing.T) {
 	_ = batchv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-obj")
@@ -336,7 +336,7 @@ func TestCreateCleanupJob_LabelsMarshalError(t *testing.T) {
 	jsonMarshal = func(v interface{}) ([]byte, error) { return nil, fmt.Errorf("json error") }
 	defer func() { jsonMarshal = old }()
 
-	if _, err := CreateCleanupJob(context.Background(), client, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
+	if _, err := CreateCleanupJob(context.Background(), cl, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
 		t.Fatalf("expected error creating job when labels JSON marshal fails")
 	}
 }
@@ -346,7 +346,7 @@ func TestCreateCleanupJob_AnnotationsMarshalError(t *testing.T) {
 	_ = batchv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-obj")
@@ -368,7 +368,7 @@ func TestCreateCleanupJob_AnnotationsMarshalError(t *testing.T) {
 	}
 	defer func() { jsonMarshal = old }()
 
-	if _, err := CreateCleanupJob(context.Background(), client, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
+	if _, err := CreateCleanupJob(context.Background(), cl, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
 		t.Fatalf("expected error creating job when annotations JSON marshal fails")
 	}
 }

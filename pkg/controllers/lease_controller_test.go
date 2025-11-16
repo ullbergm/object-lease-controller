@@ -46,6 +46,8 @@ func defaultAnn() Annotations {
 	}
 }
 
+const testOnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+
 type stubMgr struct{ c client.Client }
 
 func (s stubMgr) GetClient() client.Client { return s.c }
@@ -481,7 +483,7 @@ func TestHandleExpired_CreatesCleanupJob_FireAndForget(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+		testOnDeleteJob:         "scripts-cm/cleanup.sh",
 	})
 
 	// Need a scheme that understands Jobs
@@ -494,7 +496,7 @@ func TestHandleExpired_CreatesCleanupJob_FireAndForget(t *testing.T) {
 	// rebuild client with Job types registered
 	cl2 := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
 	r.Client = cl2
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
 	r.Recorder = record.NewFakeRecorder(10)
@@ -507,7 +509,7 @@ func TestHandleExpired_CreatesCleanupJob_FireAndForget(t *testing.T) {
 
 	// job should exist in client - search by label
 	jl := &batchv1.JobList{}
-	if err := r.Client.List(context.Background(), jl, client.InNamespace("default")); err != nil {
+	if err := r.List(context.Background(), jl, client.InNamespace("default")); err != nil {
 		t.Fatalf("list jobs failed: %v", err)
 	}
 	if len(jl.Items) == 0 {
@@ -539,7 +541,7 @@ func TestHandleExpired_CleanupJobCreateFails(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+		testOnDeleteJob:         "scripts-cm/cleanup.sh",
 	})
 
 	scheme := runtime.NewScheme()
@@ -551,7 +553,7 @@ func TestHandleExpired_CleanupJobCreateFails(t *testing.T) {
 	// client that returns error on Create
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Client = &failCreateClient{Client: base}
 	r.Recorder = record.NewFakeRecorder(10)
 
@@ -601,8 +603,8 @@ func TestHandleExpired_CleanupJobWaitFailure(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
-		"object-lease-controller.ullberg.io/job-wait":      "true",
+		testOnDeleteJob:         "scripts-cm/cleanup.sh",
+		"object-lease-controller.ullberg.io/job-wait": "true",
 	})
 
 	scheme := runtime.NewScheme()
@@ -611,7 +613,7 @@ func TestHandleExpired_CleanupJobWaitFailure(t *testing.T) {
 	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
 	r.Client = &failCompleteClient{Client: base}
 	r.Recorder = record.NewFakeRecorder(10)
@@ -662,11 +664,11 @@ func TestHandleExpired_InvalidCleanupConfigEmitsEvent(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-		"object-lease-controller.ullberg.io/on-delete-job": "missingSlash",
+		testOnDeleteJob:         "missingSlash",
 	})
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Recorder = record.NewFakeRecorder(10)
 
 	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
@@ -698,7 +700,7 @@ func TestExecuteCleanupJob_LeaseStartFallback(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: "not-a-time",
-		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+		testOnDeleteJob:         "scripts-cm/cleanup.sh",
 	})
 
 	scheme := runtime.NewScheme()
@@ -707,7 +709,7 @@ func TestExecuteCleanupJob_LeaseStartFallback(t *testing.T) {
 	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Client = base
 	r.Recorder = record.NewFakeRecorder(10)
 
@@ -733,7 +735,7 @@ func TestExecuteCleanupJob_LeaseStartFallback(t *testing.T) {
 
 	// find created job and check LEASE_STARTED_AT env is RFC3339 (approx now)
 	jl := &batchv1.JobList{}
-	if err := r.Client.List(context.Background(), jl, client.InNamespace("default")); err != nil {
+	if err := r.List(context.Background(), jl, client.InNamespace("default")); err != nil {
 		t.Fatalf("list jobs failed: %v", err)
 	}
 	if len(jl.Items) == 0 {
@@ -764,8 +766,8 @@ func TestHandleExpired_CleanupJobWaitSuccess(t *testing.T) {
 	obj.SetAnnotations(map[string]string{
 		defaultAnn().TTL:        "1s",
 		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
-		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
-		"object-lease-controller.ullberg.io/job-wait":      "true",
+		testOnDeleteJob:         "scripts-cm/cleanup.sh",
+		"object-lease-controller.ullberg.io/job-wait": "true",
 	})
 
 	scheme := runtime.NewScheme()
@@ -778,7 +780,7 @@ func TestHandleExpired_CleanupJobWaitSuccess(t *testing.T) {
 	// use top-level completeCreateClient
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
 
 	r.Client = &completeCreateClient{Client: base}
