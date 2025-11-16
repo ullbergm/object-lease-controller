@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 
+	// Test for building manager options
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	config "sigs.k8s.io/controller-runtime/pkg/config"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -163,6 +166,28 @@ func TestHealthCheck_ListFails(t *testing.T) {
 	}
 }
 
+func TestHealthCheck_ClusterScoped(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	// Node is cluster-scoped. Add a Node object so list succeeds
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Node"}
+	obj := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	mapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "", Version: "v1"}})
+	// Add Node mapping as cluster-scoped
+	mapper.Add(gvk, apimeta.RESTScopeRoot)
+
+	mgr := &testMgr{client: cl, mapper: mapper}
+
+	req := new(http.Request)
+	req = req.WithContext(context.Background())
+	if err := healthCheck(req, mgr, gvk); err != nil {
+		t.Fatalf("expected success from healthCheck for cluster-scoped resource, got error: %v", err)
+	}
+}
+
 func TestParseLeaderElection_InvalidBool(t *testing.T) {
 	os.Setenv("LEASE_LEADER_ELECTION", "notabool")
 	defer os.Unsetenv("LEASE_LEADER_ELECTION")
@@ -218,6 +243,431 @@ func TestParseLeaderElection_DefaultsToServiceAccountNamespace(t *testing.T) {
 	}
 	if !enabled || ns != "svcns" {
 		t.Fatalf("expected enabled=true ns=svcns, got enabled=%v ns=%q", enabled, ns)
+	}
+}
+
+func TestMain_Run(t *testing.T) {
+	// Save global state
+	oldArgs := os.Args
+	oldNewMgr := newManager
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNewMgr })
+
+	// Minimal fake manager
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}
+
+	// Override newManager to return our fake manager
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) {
+		return mov, nil
+	}
+
+	// Run main with a valid gvk so it proceeds and returns
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	main()
+}
+
+func TestRun_ExitsOnMissingGVK(t *testing.T) {
+	oldExit := exitFn
+	t.Cleanup(func() { exitFn = oldExit })
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	params := ParseParams{} // all empty
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected exit via exitFn")
+		}
+	}()
+	run(params)
+}
+
+func TestRun_ParseLeaderElectionInvalid(t *testing.T) {
+	oldExit := exitFn
+	t.Cleanup(func() { exitFn = oldExit })
+
+	os.Setenv("LEASE_LEADER_ELECTION", "notabool")
+	defer os.Unsetenv("LEASE_LEADER_ELECTION")
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	params := ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected exit via exitFn for invalid leader election env")
+		}
+	}()
+	run(params)
+}
+
+func TestRun_MetricsHealthReadyStartPaths(t *testing.T) {
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	// metrics error
+	mov1 := &failAlertsManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov1, nil }
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected exit via exitFn for metrics error")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"})
+}
+
+func TestRun_HealthzError(t *testing.T) {
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &failHealthzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected exit via exitFn for healthz error")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"})
+}
+
+func TestRun_ReadyzError(t *testing.T) {
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &failReadyzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected exit via exitFn for readyz error")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"})
+}
+
+func TestRun_ConfigureNamespaceReconcilerSetupFails(t *testing.T) {
+	oldNew := newManager
+	t.Cleanup(func() { newManager = oldNew })
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic when configureNamespaceReconciler fails")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap", OptInLabelKey: "watch/enabled", OptInLabelValue: "true"})
+}
+
+func TestRun_LWSetupFailsPanics(t *testing.T) {
+	oldNew := newManager
+	t.Cleanup(func() { newManager = oldNew })
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic when LeaseWatcher.SetupWithManager fails")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"})
+}
+
+func TestRun_StartFailsPanic(t *testing.T) {
+	oldNew := newManager
+	t.Cleanup(func() { newManager = oldNew })
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &startFailManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic when Start returns error")
+		}
+	}()
+	run(ParseParams{Group: "apps", Version: "v1", Kind: "ConfigMap"})
+}
+
+// TestParseLeaderElection_FlagEnabledUsesProvidedNamespace checks parse when flag
+func TestParseLeaderElection_EnvFalse(t *testing.T) {
+	os.Setenv("LEASE_LEADER_ELECTION", "false")
+	defer os.Unsetenv("LEASE_LEADER_ELECTION")
+
+	enabled, ns, err := parseLeaderElectionConfig(false, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enabled || ns != "" {
+		t.Fatalf("expected leader election disabled, got enabled=%v ns=%q", enabled, ns)
+	}
+}
+
+func TestMain_ExitsOnMissingGVK(t *testing.T) {
+	// Save global state
+	oldArgs := os.Args
+	oldExit := exitFn
+	t.Cleanup(func() { os.Args = oldArgs; exitFn = oldExit })
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+	// Ensure no flags or envs provide GVK
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Unsetenv("LEASE_GVK_GROUP")
+	os.Unsetenv("LEASE_GVK_VERSION")
+	os.Unsetenv("LEASE_GVK_KIND")
+	os.Args = []string{"cmd"}
+	// Ensure parseParameters returns what we expect
+	p := parseParameters()
+	t.Logf("parseParameters returned %+v", p)
+	// Ensure no environment variables are set that could satisfy the GVK
+	os.Unsetenv("LEASE_GVK_GROUP")
+	os.Unsetenv("LEASE_GVK_VERSION")
+	os.Unsetenv("LEASE_GVK_KIND")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected main to panic via exitFn")
+		}
+	}()
+	main()
+}
+
+func TestMain_NewManagerErrorPanics(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+
+	// newManager returns an error to trigger panic
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return nil, fmt.Errorf("boom") }
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic on NewManager error")
+		}
+	}()
+	main()
+}
+
+// manager that returns errors from healthz/readyz/metrics to test exit
+
+type failAlertsManager struct{ fakeManager }
+
+func (f *failAlertsManager) AddHealthzCheck(name string, check healthz.Checker) error {
+	return fmt.Errorf("boom")
+}
+func (f *failAlertsManager) AddReadyzCheck(name string, check healthz.Checker) error {
+	return fmt.Errorf("boom")
+}
+func (f *failAlertsManager) AddMetricsServerExtraHandler(path string, handler http.Handler) error {
+	return fmt.Errorf("boom")
+}
+
+type failHealthzManager struct{ fakeManager }
+
+func (f *failHealthzManager) AddHealthzCheck(name string, check healthz.Checker) error {
+	return fmt.Errorf("boom")
+}
+
+type failReadyzManager struct{ fakeManager }
+
+func (f *failReadyzManager) AddReadyzCheck(name string, check healthz.Checker) error {
+	return fmt.Errorf("boom")
+}
+
+type startFailManager struct{ fakeManager }
+
+func (s *startFailManager) Start(ctx context.Context) error { return fmt.Errorf("boom") }
+
+func TestMain_AddMetricsErrorExits(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &failAlertsManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic via exitFn for AddMetricsServerExtraHandler error")
+		}
+	}()
+	main()
+}
+
+func TestMain_HealthzErrorExits(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &failHealthzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic via exitFn for AddHealthzCheck error")
+		}
+	}()
+	main()
+}
+
+func TestMain_ReadyzErrorExits(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	oldExit := exitFn
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &failReadyzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic via exitFn for AddReadyzCheck error")
+		}
+	}()
+	main()
+}
+
+func TestMain_StartFailsPanics(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	mov := &startFailManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic when Start returns error")
+		}
+	}()
+	main()
+}
+
+func TestMain_ParseLeaderElectionConfigInvalidEnv(t *testing.T) {
+	oldArgs := os.Args
+	oldExit := exitFn
+	t.Cleanup(func() { os.Args = oldArgs; exitFn = oldExit })
+
+	os.Setenv("LEASE_LEADER_ELECTION", "notabool")
+	defer os.Unsetenv("LEASE_LEADER_ELECTION")
+
+	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
+
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic via exitFn for invalid LEASE_LEADER_ELECTION")
+		}
+	}()
+	main()
+}
+
+func TestMain_LWSetupFailsPanics(t *testing.T) {
+	oldArgs := os.Args
+	oldNew := newManager
+	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	// Use a manager where Add returns error so SetupWithManager fails
+	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
+
+	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic when LeaseWatcher.SetupWithManager fails")
+		}
+	}()
+	main()
+}
+
+func TestParseLeaderElection_EnvTrueWithProvidedParamNamespace(t *testing.T) {
+	os.Setenv("LEASE_LEADER_ELECTION", "true")
+	defer os.Unsetenv("LEASE_LEADER_ELECTION")
+
+	enabled, ns, err := parseLeaderElectionConfig(false, "provided-ns")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !enabled || ns != "provided-ns" {
+		t.Fatalf("expected enabled=true ns=provided-ns, got enabled=%v ns=%q", enabled, ns)
+	}
+}
+
+func TestHealthCheck_UsesLeaseNamespaceEnv(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	obj := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "myns"}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	mapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "", Version: "v1"}})
+	mapper.Add(gvk, apimeta.RESTScopeNamespace)
+
+	mgr := &testMgr{client: cl, mapper: mapper}
+
+	os.Setenv("LEASE_NAMESPACE", "myns")
+	defer os.Unsetenv("LEASE_NAMESPACE")
+
+	req := new(http.Request)
+	req = req.WithContext(context.Background())
+	if err := healthCheck(req, mgr, gvk); err != nil {
+		t.Fatalf("expected success from healthCheck with LEASE_NAMESPACE override, got error: %v", err)
+	}
+}
+
+func TestParseLeaderElection_FlagEnabledUsesProvidedNamespace(t *testing.T) {
+	// When enabled via flag, should not attempt env parse and should return the passed namespace
+	enabled, ns, err := parseLeaderElectionConfig(true, "mypfx")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !enabled || ns != "mypfx" {
+		t.Fatalf("expected enabled=true ns=mypfx, got enabled=%v ns=%q", enabled, ns)
 	}
 }
 
@@ -294,6 +744,27 @@ func TestConfigureNamespaceReconciler(t *testing.T) {
 	}
 }
 
+// A manager that returns an error from Add so SetupWithManager fails
+type errAddManager struct{ fakeManager }
+
+func (e *errAddManager) Add(r manager.Runnable) error { return fmt.Errorf("boom") }
+
+func TestConfigureNamespaceReconciler_SetupError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
+
+	// With labels, SetupWithManager should return an error due to manager Add failure
+	tr2, err := configureNamespaceReconciler(mov, "watch/enabled", "true", "lid")
+	if err == nil {
+		t.Fatalf("expected error when manager Add fails")
+	}
+	if tr2 != nil {
+		t.Fatalf("expected nil tracker when SetupWithManager fails")
+	}
+}
+
 func TestParseParameters_FromFlags(t *testing.T) {
 	// Save global state
 	oldArgs := os.Args
@@ -349,8 +820,17 @@ func TestParseParameters_FromEnv(t *testing.T) {
 			} else {
 				os.Setenv(k, v)
 			}
+
 		}
 		flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+		// When enabled via flag, should not attempt env parse and should return the passed namespace
+		enabled, ns, err := parseLeaderElectionConfig(true, "mypfx")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !enabled || ns != "mypfx" {
+			t.Fatalf("expected enabled=true ns=mypfx, got enabled=%v ns=%q", enabled, ns)
+		}
 		os.Args = []string{"cmd"}
 	})
 

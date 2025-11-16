@@ -64,6 +64,12 @@ var (
 )
 
 // Allow injection for testing
+var exitFn = os.Exit
+
+// Allow injection of controller manager constructor in tests
+var newManager = ctrl.NewManager
+
+// Allow injection for testing
 var statFn = os.Stat
 var readFileFn = os.ReadFile
 
@@ -81,16 +87,23 @@ func main() {
 	// flags like -zap-log-level=debug to control verbosity.
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
+	run(params)
+}
+
+// run implements the main logic separately so tests can call it directly.
+func run(params ParseParams) {
 	enableLeaderElection, leaderElectionNamespace, errE := parseLeaderElectionConfig(params.LeaderElectionEnabled, params.LeaderElectionNamespace)
 	if errE != nil {
 		fmt.Printf("%v\n", errE)
-		os.Exit(1)
+		exitFn(1)
+		return
 	}
 
 	if params.Version == "" || params.Kind == "" {
 		fmt.Println("Usage: lease-controller -group=GROUP -version=VERSION -kind=KIND [--leader-elect] [--leader-elect-namespace=NAMESPACE]")
 		fmt.Println("Or set LEASE_GVK_GROUP, LEASE_GVK_VERSION, LEASE_GVK_KIND, LEASE_LEADER_ELECTION env vars")
-		os.Exit(1)
+		exitFn(1)
+		return
 	}
 
 	scheme := runtime.NewScheme()
@@ -108,7 +121,7 @@ func main() {
 
 	mgrOpts := buildManagerOptions(scheme, params.Group, params.Version, params.Kind, params.MetricsBindAddress, params.HealthProbeBindAddress, params.PprofBindAddress, enableLeaderElection, leaderElectionNamespace)
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
+	mgr, err := newManager(ctrl.GetConfigOrDie(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		panic(err)
@@ -135,7 +148,8 @@ func main() {
 		setupLog.Info("Adding /debug/vars to metrics", "address", params.MetricsBindAddress)
 		if err := mgr.AddMetricsServerExtraHandler("/debug/vars", expvar.Handler()); err != nil {
 			setupLog.Error(err, "unable to set up metrics server extra handler")
-			os.Exit(1)
+			exitFn(1)
+			return
 		}
 	}
 
@@ -145,25 +159,32 @@ func main() {
 
 	if err := mgr.AddHealthzCheck("gvk", healthCheck); err != nil {
 		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		exitFn(1)
+		return
 	}
 
 	// Ready check: verify manager cache is synced
-	readyCheck := func(req *http.Request) error {
-		if !mgr.GetCache().WaitForCacheSync(req.Context()) {
-			return fmt.Errorf("cache not synced")
-		}
-		return nil
-	}
+	readyCheck := newReadyCheck(mgr)
 	if err := mgr.AddReadyzCheck("readyz", readyCheck); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		exitFn(1)
+		return
 	}
 
 	setupLog.Info("Starting manager", "group", params.Group, "version", params.Version, "kind", params.Kind, "leaderElectionID", leaderElectionID)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		panic(err)
+	}
+}
+
+// newReadyCheck returns a callback that verifies the manager cache is synced.
+func newReadyCheck(mgr ctrl.Manager) func(req *http.Request) error {
+	return func(req *http.Request) error {
+		if !mgr.GetCache().WaitForCacheSync(req.Context()) {
+			return fmt.Errorf("cache not synced")
+		}
+		return nil
 	}
 }
 
