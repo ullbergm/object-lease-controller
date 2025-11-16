@@ -15,6 +15,21 @@ func FuzzParseLeaderElectionConfig(f *testing.F) {
 		{"notabool", ""},
 		{"true", "custom-ns"},
 		{"", "default"},
+		// Edge cases
+		{"TRUE", "uppercase"},
+		{"False", "mixedcase"},
+		{"on", "on-value"},
+		{"off", "off-value"},
+		{"yes", "yes-value"},
+		{"no", "no-value"},
+		{"0", "zero-value"},
+		{"", "very-long-namespace-name-exceeding-normal-kubernetes-limits"},
+		{"true", "ns-with-special-chars-123"},
+		{"false", ""},
+		{"   true   ", "whitespace-ns"},
+		{"true\n", "newline"},
+		{"\ttrue", "tab"},
+		{"enabled", "enabled-value"},
 	}
 	for _, s := range seeds {
 		f.Add(s.envVal, s.namespace)

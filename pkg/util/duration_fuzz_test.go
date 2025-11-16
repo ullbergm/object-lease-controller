@@ -29,6 +29,25 @@ func FuzzParseFlexibleDuration(f *testing.F) {
 		"10ms",
 		"5mth",
 		"1month",
+		// Edge cases
+		"0s",
+		"0d",
+		"-0.5h",
+		"1h30m45s",
+		"1h30m45s100ms",
+		"99999999999999999999999999999999999d", // overflow
+		"1.00000000000001h",
+		"   1h   ", // whitespace
+		"1h\n",
+		"1h\t",
+		"100",    // no unit
+		"h",      // no number
+		"1hh",    // double unit
+		"1h2h",   // duplicate time unit
+		"1.2.3h", // malformed float
+		"0.0000001ns",
+		"-1w-2d", // negative compound
+		"1e10h",  // scientific notation
 	}
 	for _, s := range seeds {
 		f.Add(s)

@@ -15,6 +15,26 @@ func FuzzMinimalObjectTransform(f *testing.F) {
 		"some=thing,other=val",
 		"",
 		"key=value=with=equals",
+		// Edge cases
+		"object-lease-controller.ullberg.io/ttl=", // empty value
+		"=empty-key", // empty key
+		"key1=val1,key2=val2,key3=val3,key4=val4,key5=val5",                                         // many annotations
+		"object-lease-controller.ullberg.io/ttl=1h,object-lease-controller.ullberg.io/lease-start=", // mixed keep keys
+		"   key   =   value   ", // whitespace
+		"key=value\nwith\nnewlines",
+		"very-long-annotation-key-name-that-exceeds-normal-limits=value",
+		"key=very-long-annotation-value-" + strings.Repeat("x", 1000),
+		"special!@#$chars=value",
+		"key=special!@#$value",
+		"duplicate=first,duplicate=second", // duplicate keys
+		"key",                              // no equals sign
+		"key=",                             // empty value with equals
+		"=",                                // just equals
+		",,,",                              // only commas
+		"k1=v1,,k2=v2",                     // consecutive commas
+		strings.Repeat("key=val,", 100),    // many key-value pairs
+		"object-lease-controller.ullberg.io/TTL=1h", // case variation on keep key
+		"OBJECT-LEASE-CONTROLLER.ULLBERG.IO/ttl=2d", // full uppercase domain
 	}
 	for _, s := range seeds {
 		f.Add(s)
