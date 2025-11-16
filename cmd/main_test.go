@@ -314,10 +314,20 @@ func TestRun_ParseLeaderElectionInvalid(t *testing.T) {
 func TestRun_MetricsHealthReadyStartPaths(t *testing.T) {
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+
+	// Mock getConfig
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 
 	// metrics error
 	mov1 := &failAlertsManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
@@ -334,9 +344,17 @@ func TestRun_MetricsHealthReadyStartPaths(t *testing.T) {
 func TestRun_HealthzError(t *testing.T) {
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &failHealthzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
@@ -351,9 +369,17 @@ func TestRun_HealthzError(t *testing.T) {
 func TestRun_ReadyzError(t *testing.T) {
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &failReadyzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
@@ -367,9 +393,16 @@ func TestRun_ReadyzError(t *testing.T) {
 
 func TestRun_ConfigureNamespaceReconcilerSetupFails(t *testing.T) {
 	oldNew := newManager
-	t.Cleanup(func() { newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 
@@ -383,9 +416,16 @@ func TestRun_ConfigureNamespaceReconcilerSetupFails(t *testing.T) {
 
 func TestRun_LWSetupFailsPanics(t *testing.T) {
 	oldNew := newManager
-	t.Cleanup(func() { newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 
@@ -399,9 +439,16 @@ func TestRun_LWSetupFailsPanics(t *testing.T) {
 
 func TestRun_StartFailsPanic(t *testing.T) {
 	oldNew := newManager
-	t.Cleanup(func() { newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &startFailManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 	defer func() {
