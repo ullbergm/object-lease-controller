@@ -45,6 +45,30 @@ test: tidy fmt vet ## Run tests with coverage
 	go test ./... -race -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o=coverage.html
 
+.PHONY: fuzz
+# Run all Go fuzzers for a configurable duration each. Default: 15s per fuzzer.
+# Usage: make fuzz            # run fuzzers for 15s each
+#        make fuzz FUZZ_TIME=30s  # run fuzzers for 30s each
+FUZZ_TIME ?= 15s
+# Detect fuzzers dynamically at run time in the recipe (avoid Make parsing of parentheses)
+
+fuzz:
+	@set -e; \
+	files=$$(find pkg -name '*_fuzz_test.go' -print); \
+	if [ -z "$$files" ]; then \
+		echo "No fuzz files found"; exit 0; \
+	fi; \
+	for ffile in $$files; do \
+		pkgdir=$$(dirname $$ffile); \
+		fn=$$(grep -Eo 'func Fuzz[[:alnum:]_]*' $$ffile | sed 's/func //' | head -n1 || true); \
+		if [ -z "$$fn" ]; then \
+			continue; \
+		fi; \
+		echo "==> Running $$fn in $$pkgdir for $(FUZZ_TIME)"; \
+		go test ./$$pkgdir -run Fuzz -fuzz=$$fn -fuzztime=$(FUZZ_TIME) || exit 1; \
+	done; \
+	echo "All fuzzers finished"
+
 .PHONY: build
 build: tidy fmt vet test ## Build the binary
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/main.go
