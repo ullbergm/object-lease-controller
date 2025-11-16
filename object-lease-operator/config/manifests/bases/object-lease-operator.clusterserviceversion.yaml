@@ -9,7 +9,8 @@ metadata:
     containerImage: controller:latest
     description: Operator to manage object leases in Kubernetes.
     repository: https://github.com/ullbergm/object-lease-controller
-    support: Magnus Ullberg <magnus@ullberg.io>
+    support: Magnus Ullberg <magnus@ullberg.us>
+    console.openshift.io/plugins: '["object-lease-console-plugin"]'
   name: object-lease-operator.v1.0.0
   namespace: placeholder
 spec:
@@ -45,7 +46,7 @@ spec:
   - name: Github Repo
     url: https://github.com/ullbergm/object-lease-controller
   maintainers:
-  - email: magnus@ullberg.io
+  - email: magnus@ullberg.us
     name: Magnus Ullberg
   maturity: beta
   minKubeVersion: 1.13.0

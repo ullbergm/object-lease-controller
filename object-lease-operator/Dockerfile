@@ -3,7 +3,7 @@ FROM quay.io/operator-framework/helm-operator:v1.42.0
 
 ### Required OpenShift Labels
 LABEL name="Object Lease Operator" \
-    maintainer="magnus@ullberg.io" \
+    maintainer="magnus@ullberg.us" \
     vendor="Magnus Ullberg" \
     version="v1.0.0" \
     release="1" \
