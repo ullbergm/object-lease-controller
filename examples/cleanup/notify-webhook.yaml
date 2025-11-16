@@ -67,14 +67,12 @@ metadata:
   namespace: demo
 
 ---
-# Secret containing webhook token (linked to ServiceAccount)
+# Secret containing webhook token
 apiVersion: v1
 kind: Secret
 metadata:
   name: webhook-token
   namespace: demo
-  annotations:
-    kubernetes.io/service-account.name: webhook-sa
 type: Opaque
 stringData:
   WEBHOOK_TOKEN: "your-webhook-token-here"
@@ -95,6 +93,7 @@ metadata:
     object-lease-controller.ullberg.io/on-delete-job: "webhook-scripts/notify-webhook.sh"
     object-lease-controller.ullberg.io/job-image: "curlimages/curl:latest"
     object-lease-controller.ullberg.io/job-service-account: "webhook-sa"
+    object-lease-controller.ullberg.io/job-env-secrets: "webhook-token"
     object-lease-controller.ullberg.io/job-wait: "false"
     object-lease-controller.ullberg.io/job-timeout: "2m"
     object-lease-controller.ullberg.io/job-ttl: "300"

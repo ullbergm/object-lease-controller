@@ -42,6 +42,7 @@ const (
 	AnnJobTimeout        = "object-lease-controller.ullberg.io/job-timeout"
 	AnnJobTTL            = "object-lease-controller.ullberg.io/job-ttl"
 	AnnJobBackoffLimit   = "object-lease-controller.ullberg.io/job-backoff-limit"
+	AnnJobEnvSecrets     = "object-lease-controller.ullberg.io/job-env-secrets"
 )
 
 // ParseParams holds runtime configuration parsed from flags and environment.
@@ -67,9 +68,18 @@ var statFn = os.Stat
 var readFileFn = os.ReadFile
 
 func main() {
-	ctrl.SetLogger(zap.New())
+	// Bind zap logging flags (e.g., -zap-log-level) to the global flag set
+	// so callers (and the Makefile) can adjust verbosity. Don't set the
+	// logger until after flags are parsed so the selected level is applied.
+	var zapOpts zap.Options
+	zapOpts.BindFlags(flag.CommandLine)
 
 	params := parseParameters()
+
+	// Set logger using the parsed zap options (this reads values parsed by
+	// parseParameters which calls flag.Parse()). This allows callers to pass
+	// flags like -zap-log-level=debug to control verbosity.
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
 	enableLeaderElection, leaderElectionNamespace, errE := parseLeaderElectionConfig(params.LeaderElectionEnabled, params.LeaderElectionNamespace)
 	if errE != nil {
@@ -310,6 +320,7 @@ func newLeaseWatcher(mgr ctrl.Manager, gvk schema.GroupVersionKind, leaderElecti
 			JobTimeout:        AnnJobTimeout,
 			JobTTL:            AnnJobTTL,
 			JobBackoffLimit:   AnnJobBackoffLimit,
+			JobEnvSecrets:     AnnJobEnvSecrets,
 		},
 		Metrics: ometrics.NewLeaseMetrics(gvk),
 	}

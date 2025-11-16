@@ -49,6 +49,7 @@ type Annotations struct {
 	JobTimeout        string
 	JobTTL            string
 	JobBackoffLimit   string
+	JobEnvSecrets     string
 }
 
 var (
@@ -253,6 +254,7 @@ func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unst
 		"JobTimeout":        r.Annotations.JobTimeout,
 		"JobTTL":            r.Annotations.JobTTL,
 		"JobBackoffLimit":   r.Annotations.JobBackoffLimit,
+		"JobEnvSecrets":     r.Annotations.JobEnvSecrets,
 	}
 
 	config, err := util.ParseCleanupJobConfig(anns, annotationKeys)

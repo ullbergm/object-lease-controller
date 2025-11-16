@@ -22,6 +22,7 @@ This directory contains example configurations for using cleanup jobs with the o
 | `object-lease-controller.ullberg.io/on-delete-job` | Yes (only if cleanup is needed) | - | ConfigMap reference in format `configmap-name/script-key` |
 | `object-lease-controller.ullberg.io/job-service-account` | No | `default` | ServiceAccount to run the Job as |
 | `object-lease-controller.ullberg.io/job-image` | No | `bitnami/kubectl:latest` | Container image for running the script |
+| `object-lease-controller.ullberg.io/job-env-secrets` | No | - | Comma-separated list of Secret names to mount as environment variables |
 | `object-lease-controller.ullberg.io/job-wait` | No | `false` | Wait for Job completion before deleting object |
 | `object-lease-controller.ullberg.io/job-timeout` | No | `5m` | Maximum time to wait for Job completion |
 | `object-lease-controller.ullberg.io/job-ttl` | No | `300` | TTL in seconds for Job cleanup |

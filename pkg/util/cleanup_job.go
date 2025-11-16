@@ -22,9 +22,9 @@ var jsonMarshal = json.Marshal
 const (
 	DefaultJobImage        = "bitnami/kubectl:latest"
 	DefaultServiceAccount  = "default"
-	DefaultJobTTL          = 300
+	DefaultJobTTL          = 60
 	DefaultJobBackoffLimit = 3
-	DefaultJobTimeout      = "5m"
+	DefaultJobTimeout      = "30s"
 )
 
 // CleanupJobConfig holds the configuration for a cleanup job
@@ -37,6 +37,7 @@ type CleanupJobConfig struct {
 	Timeout                 time.Duration
 	TTLSecondsAfterFinished int32
 	BackoffLimit            int32
+	EnvFromSecrets          []string // List of secret names to mount as environment variables
 }
 
 // ParseCleanupJobConfig extracts cleanup job configuration from object annotations
@@ -62,11 +63,21 @@ func ParseCleanupJobConfig(annotations map[string]string, annotationKeys map[str
 		Timeout:                 5 * time.Minute,
 		TTLSecondsAfterFinished: DefaultJobTTL,
 		BackoffLimit:            DefaultJobBackoffLimit,
+		EnvFromSecrets:          []string{},
 	}
 
 	// Parse optional service account
 	if sa := annotations[annotationKeys["JobServiceAccount"]]; sa != "" {
 		config.ServiceAccount = sa
+	}
+
+	// Parse optional secrets for environment variables
+	if secrets := annotations[annotationKeys["JobEnvSecrets"]]; secrets != "" {
+		config.EnvFromSecrets = strings.Split(secrets, ",")
+		// Trim whitespace from secret names
+		for i := range config.EnvFromSecrets {
+			config.EnvFromSecrets[i] = strings.TrimSpace(config.EnvFromSecrets[i])
+		}
 	}
 
 	// Parse optional image
@@ -189,6 +200,7 @@ func CreateCleanupJob(
 							Image:   config.Image,
 							Command: []string{"/scripts/cleanup-script"},
 							Env:     envVars,
+							EnvFrom: buildEnvFrom(config.EnvFromSecrets),
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "script",
@@ -245,4 +257,25 @@ func WaitForJobCompletion(ctx context.Context, c client.Client, job *batchv1.Job
 // Helper function to create int32 pointer
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+// buildEnvFrom creates EnvFromSource entries for each secret name
+func buildEnvFrom(secretNames []string) []corev1.EnvFromSource {
+	if len(secretNames) == 0 {
+		return nil
+	}
+
+	envFrom := make([]corev1.EnvFromSource, 0, len(secretNames))
+	for _, secretName := range secretNames {
+		if secretName != "" {
+			envFrom = append(envFrom, corev1.EnvFromSource{
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: secretName,
+					},
+				},
+			})
+		}
+	}
+	return envFrom
 }

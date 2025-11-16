@@ -173,6 +173,7 @@ func TestParseCleanupJobConfig_Defaults(t *testing.T) {
 		"JobTimeout":        "job-timeout",
 		"JobTTL":            "job-ttl",
 		"JobBackoffLimit":   "job-backoff-limit",
+		"JobEnvSecrets":     "job-env-secrets",
 	}
 
 	config, err := ParseCleanupJobConfig(annotations, annotationKeys)
@@ -197,6 +198,65 @@ func TestParseCleanupJobConfig_Defaults(t *testing.T) {
 	}
 	if config.BackoffLimit != DefaultJobBackoffLimit {
 		t.Errorf("Expected default BackoffLimit %d, got %d", DefaultJobBackoffLimit, config.BackoffLimit)
+	}
+	if len(config.EnvFromSecrets) != 0 {
+		t.Errorf("Expected empty EnvFromSecrets, got %v", config.EnvFromSecrets)
+	}
+}
+
+func TestParseCleanupJobConfig_WithSecrets(t *testing.T) {
+	annotations := map[string]string{
+		"on-delete-job":   "scripts/cleanup.sh",
+		"job-env-secrets": "aws-creds,db-creds",
+	}
+	annotationKeys := map[string]string{
+		"OnDeleteJob":       "on-delete-job",
+		"JobEnvSecrets":     "job-env-secrets",
+		"JobServiceAccount": "job-service-account",
+	}
+
+	config, err := ParseCleanupJobConfig(annotations, annotationKeys)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if config == nil {
+		t.Fatal("Expected config, got nil")
+	}
+
+	if len(config.EnvFromSecrets) != 2 {
+		t.Fatalf("Expected 2 secrets, got %d", len(config.EnvFromSecrets))
+	}
+	if config.EnvFromSecrets[0] != "aws-creds" {
+		t.Errorf("Expected first secret 'aws-creds', got %s", config.EnvFromSecrets[0])
+	}
+	if config.EnvFromSecrets[1] != "db-creds" {
+		t.Errorf("Expected second secret 'db-creds', got %s", config.EnvFromSecrets[1])
+	}
+}
+
+func TestParseCleanupJobConfig_WithSecretsWhitespace(t *testing.T) {
+	annotations := map[string]string{
+		"on-delete-job":   "scripts/cleanup.sh",
+		"job-env-secrets": "aws-creds , db-creds , third-secret",
+	}
+	annotationKeys := map[string]string{
+		"OnDeleteJob":       "on-delete-job",
+		"JobEnvSecrets":     "job-env-secrets",
+		"JobServiceAccount": "job-service-account",
+	}
+
+	config, err := ParseCleanupJobConfig(annotations, annotationKeys)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(config.EnvFromSecrets) != 3 {
+		t.Fatalf("Expected 3 secrets, got %d", len(config.EnvFromSecrets))
+	}
+	// Verify whitespace is trimmed
+	for i, expected := range []string{"aws-creds", "db-creds", "third-secret"} {
+		if config.EnvFromSecrets[i] != expected {
+			t.Errorf("Expected secret %d to be '%s', got '%s'", i, expected, config.EnvFromSecrets[i])
+		}
 	}
 }
 
@@ -471,5 +531,107 @@ func TestWaitForJobCompletion_GetError(t *testing.T) {
 	err := WaitForJobCompletion(context.Background(), fc, job, 10*time.Second)
 	if err == nil {
 		t.Fatalf("expected error when Get fails, got nil")
+	}
+}
+
+func TestBuildEnvFrom_Empty(t *testing.T) {
+	result := buildEnvFrom([]string{})
+	if result != nil {
+		t.Errorf("Expected nil for empty input, got %v", result)
+	}
+}
+
+func TestBuildEnvFrom_SingleSecret(t *testing.T) {
+	result := buildEnvFrom([]string{"my-secret"})
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 EnvFromSource, got %d", len(result))
+	}
+	if result[0].SecretRef == nil {
+		t.Fatal("Expected SecretRef to be set")
+	}
+	if result[0].SecretRef.Name != "my-secret" {
+		t.Errorf("Expected secret name 'my-secret', got %s", result[0].SecretRef.Name)
+	}
+}
+
+func TestBuildEnvFrom_MultipleSecrets(t *testing.T) {
+	result := buildEnvFrom([]string{"secret1", "secret2", "secret3"})
+	if len(result) != 3 {
+		t.Fatalf("Expected 3 EnvFromSource, got %d", len(result))
+	}
+	for i, expected := range []string{"secret1", "secret2", "secret3"} {
+		if result[i].SecretRef == nil {
+			t.Fatalf("Expected SecretRef at index %d to be set", i)
+		}
+		if result[i].SecretRef.Name != expected {
+			t.Errorf("Expected secret %d to be '%s', got %s", i, expected, result[i].SecretRef.Name)
+		}
+	}
+}
+
+func TestBuildEnvFrom_EmptyStringInList(t *testing.T) {
+	result := buildEnvFrom([]string{"secret1", "", "secret2"})
+	if len(result) != 2 {
+		t.Fatalf("Expected 2 EnvFromSource (empty string should be skipped), got %d", len(result))
+	}
+	if result[0].SecretRef.Name != "secret1" {
+		t.Errorf("Expected first secret 'secret1', got %s", result[0].SecretRef.Name)
+	}
+	if result[1].SecretRef.Name != "secret2" {
+		t.Errorf("Expected second secret 'secret2', got %s", result[1].SecretRef.Name)
+	}
+}
+
+func TestCreateCleanupJob_WithSecrets(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	obj := &unstructured.Unstructured{}
+	obj.SetName("test-obj")
+	obj.SetNamespace("test-ns")
+	obj.SetUID("test-uid")
+	obj.SetResourceVersion("123")
+
+	gvk := schema.GroupVersionKind{
+		Group:   "example.com",
+		Version: "v1",
+		Kind:    "TestKind",
+	}
+
+	config := &CleanupJobConfig{
+		ConfigMapName:           "my-scripts",
+		ScriptKey:               "cleanup.sh",
+		ServiceAccount:          "test-sa",
+		Image:                   "test/image:v1",
+		Wait:                    false,
+		Timeout:                 5 * time.Minute,
+		TTLSecondsAfterFinished: 300,
+		BackoffLimit:            3,
+		EnvFromSecrets:          []string{"aws-creds", "db-password"},
+	}
+
+	job, err := CreateCleanupJob(context.Background(), cl, obj, gvk, config, time.Now(), time.Now())
+	if err != nil {
+		t.Fatalf("Failed to create cleanup job: %v", err)
+	}
+
+	if len(job.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("Expected 1 container, got %d", len(job.Spec.Template.Spec.Containers))
+	}
+
+	container := job.Spec.Template.Spec.Containers[0]
+	if len(container.EnvFrom) != 2 {
+		t.Fatalf("Expected 2 EnvFromSource, got %d", len(container.EnvFrom))
+	}
+
+	// Check that secrets are correctly mounted
+	if container.EnvFrom[0].SecretRef.Name != "aws-creds" {
+		t.Errorf("Expected first secret 'aws-creds', got %s", container.EnvFrom[0].SecretRef.Name)
+	}
+	if container.EnvFrom[1].SecretRef.Name != "db-password" {
+		t.Errorf("Expected second secret 'db-password', got %s", container.EnvFrom[1].SecretRef.Name)
 	}
 }
