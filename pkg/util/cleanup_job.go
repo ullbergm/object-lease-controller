@@ -16,6 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// jsonMarshal allows tests to override JSON marshaling errors
+var jsonMarshal = json.Marshal
+
 const (
 	DefaultJobImage        = "bitnami/kubectl:latest"
 	DefaultServiceAccount  = "default"
@@ -120,11 +123,11 @@ func CreateCleanupJob(
 	leaseStartedAt, leaseExpiredAt time.Time,
 ) (*batchv1.Job, error) {
 	// Prepare environment variables
-	labels, err := json.Marshal(obj.GetLabels())
+	labels, err := jsonMarshal(obj.GetLabels())
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal object labels to JSON: %w", err)
 	}
-	annotations, err := json.Marshal(obj.GetAnnotations())
+	annotations, err := jsonMarshal(obj.GetAnnotations())
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal object annotations to JSON: %w", err)
 	}

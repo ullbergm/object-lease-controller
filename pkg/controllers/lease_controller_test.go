@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -362,6 +363,46 @@ type captureClientErr struct {
 	forceErr error
 }
 
+// failCreateClient returns an error for Create() to simulate job creation failure
+type failCreateClient struct{ client.Client }
+
+func (c *failCreateClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	return fmt.Errorf("create boom")
+}
+
+// completeCreateClient wraps a client and marks created Jobs as completed
+type completeCreateClient struct{ client.Client }
+
+func (c *completeCreateClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if err := c.Client.Create(ctx, obj, opts...); err != nil {
+		return err
+	}
+	// If this is a Job creation, mark the job as complete immediately so waiters will see it.
+	if j, ok := obj.(*batchv1.Job); ok {
+		j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+		if err := c.Status().Update(ctx, j); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// failCompleteClient marks created jobs as failed (to simulate failure seen by WaitForJobCompletion)
+type failCompleteClient struct{ client.Client }
+
+func (c *failCompleteClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if err := c.Client.Create(ctx, obj, opts...); err != nil {
+		return err
+	}
+	if j, ok := obj.(*batchv1.Job); ok {
+		j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Message: "failed"}}
+		if err := c.Status().Update(ctx, j); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *captureClientErr) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
 	if c.forceErr != nil {
 		return c.forceErr
@@ -429,6 +470,357 @@ func TestHandleExpired_RecordsEventAndIncrementsMetrics(t *testing.T) {
 		}
 	}
 	t.Fatalf("leases_expired_total not found in metrics")
+}
+
+// Test path where a cleanup job is configured in fire-and-forget mode and is created
+func TestHandleExpired_CreatesCleanupJob_FireAndForget(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-cleanup-ff")
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+	})
+
+	// Need a scheme that understands Jobs
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+
+	// create watcher and use fake client
+	r, _, scheme := newWatcher(t, gvk, obj)
+	_ = batchv1.AddToScheme(scheme)
+	// rebuild client with Job types registered
+	cl2 := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+	r.Client = cl2
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	reg := withIsolatedRegistry(t)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+	r.Recorder = record.NewFakeRecorder(10)
+
+	// run handleExpired which should attempt to create a cleanup job then delete
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// job should exist in client - search by label
+	jl := &batchv1.JobList{}
+	if err := r.Client.List(context.Background(), jl, client.InNamespace("default")); err != nil {
+		t.Fatalf("list jobs failed: %v", err)
+	}
+	if len(jl.Items) == 0 {
+		t.Fatalf("expected cleanup job to be created, none found")
+	}
+
+	// CleanupJobsCreated metric should be incremented by handleExpired
+	mfs, _ := reg.Gather()
+	found := false
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_cleanup_jobs_created_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("cleanup jobs created metric should increment")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cleanup jobs created metric not found")
+	}
+}
+
+// Test path when job creation fails: we should still proceed to delete and emit an event & metric
+func TestHandleExpired_CleanupJobCreateFails(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-cleanup-fail")
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+	})
+
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	// client that returns error on Create
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Client = &failCreateClient{Client: base}
+	r.Recorder = record.NewFakeRecorder(10)
+
+	reg := withIsolatedRegistry(t)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// Should have a CleanupJobFailed event recorded (skip initial LeaseExpired event)
+	timeout := time.After(1 * time.Second)
+	foundErr := false
+	for !foundErr {
+		select {
+		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+			if strings.Contains(ev, "CleanupJobFailed") {
+				foundErr = true
+			}
+		case <-timeout:
+			t.Fatalf("expected CleanupJobFailed event but none found")
+		}
+	}
+
+	// metric increment
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_cleanup_jobs_failed_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("cleanup jobs failed metric should be incremented")
+			}
+			return
+		}
+	}
+	t.Fatalf("cleanup_jobs_failed_total not found in metrics")
+}
+
+func TestHandleExpired_CleanupJobWaitFailure(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-cleanup-wait-fail")
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+		"object-lease-controller.ullberg.io/job-wait":      "true",
+	})
+
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
+	r.Client = &failCompleteClient{Client: base}
+	r.Recorder = record.NewFakeRecorder(10)
+
+	reg := withIsolatedRegistry(t)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// expect a CleanupJobFailed event, scan events until found (LeaseExpired may be recorded first)
+	timeout := time.After(1 * time.Second)
+	found := false
+	for !found {
+		select {
+		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+			if strings.Contains(ev, "CleanupJobFailed") {
+				found = true
+			}
+		case <-timeout:
+			t.Fatalf("expected CleanupJobFailed event but none found")
+		}
+	}
+
+	// metric increment
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_cleanup_jobs_failed_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("cleanup jobs failed metric should be incremented")
+			}
+			return
+		}
+	}
+	t.Fatalf("cleanup_jobs_failed_total not found in metrics")
+}
+
+func TestHandleExpired_InvalidCleanupConfigEmitsEvent(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-invalid-config")
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		"object-lease-controller.ullberg.io/on-delete-job": "missingSlash",
+	})
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Recorder = record.NewFakeRecorder(10)
+
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// Expect a CleanupJobConfigInvalid event - scan events until found (LeaseExpired may be recorded first)
+	timeout2 := time.After(1 * time.Second)
+	gotInvalid := false
+	for !gotInvalid {
+		select {
+		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+			if strings.Contains(ev, "CleanupJobConfigInvalid") {
+				gotInvalid = true
+			}
+		case <-timeout2:
+			t.Fatalf("expected CleanupJobConfigInvalid event but none found")
+		}
+	}
+}
+
+func TestExecuteCleanupJob_LeaseStartFallback(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-lease-start-fallback")
+	// invalid lease start -> fallback should be used
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: "not-a-time",
+		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+	})
+
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Client = base
+	r.Recorder = record.NewFakeRecorder(10)
+
+	cfgKeys := map[string]string{
+		"OnDeleteJob":       r.Annotations.OnDeleteJob,
+		"JobServiceAccount": r.Annotations.JobServiceAccount,
+		"JobImage":          r.Annotations.JobImage,
+		"JobWait":           r.Annotations.JobWait,
+		"JobTimeout":        r.Annotations.JobTimeout,
+		"JobTTL":            r.Annotations.JobTTL,
+		"JobBackoffLimit":   r.Annotations.JobBackoffLimit,
+	}
+	// use ParseCleanupJobConfig to get a valid config for Create
+	cfg, err := util.ParseCleanupJobConfig(obj.GetAnnotations(), cfgKeys)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	// call executeCleanupJob directly with wait=false
+	if err := r.executeCleanupJob(context.Background(), obj, cfg, time.Now().UTC()); err != nil {
+		t.Fatalf("executeCleanupJob returned error: %v", err)
+	}
+
+	// find created job and check LEASE_STARTED_AT env is RFC3339 (approx now)
+	jl := &batchv1.JobList{}
+	if err := r.Client.List(context.Background(), jl, client.InNamespace("default")); err != nil {
+		t.Fatalf("list jobs failed: %v", err)
+	}
+	if len(jl.Items) == 0 {
+		t.Fatalf("expected job to have been created")
+	}
+	job := jl.Items[0]
+	got := ""
+	for _, c := range job.Spec.Template.Spec.Containers[0].Env {
+		if c.Name == "LEASE_STARTED_AT" {
+			got = c.Value
+			break
+		}
+	}
+	if got == "" {
+		t.Fatalf("LEASE_STARTED_AT env var not set on job")
+	}
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Fatalf("LEASE_STARTED_AT not RFC3339: %v", err)
+	}
+}
+
+// Test path where Wait=true and the Job completes successfully
+func TestHandleExpired_CleanupJobWaitSuccess(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	obj := &unstructured.Unstructured{}
+	setMeta(obj, gvk, "default", "cm-cleanup-wait")
+	obj.SetAnnotations(map[string]string{
+		defaultAnn().TTL:        "1s",
+		defaultAnn().LeaseStart: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		"object-lease-controller.ullberg.io/on-delete-job": "scripts-cm/cleanup.sh",
+		"object-lease-controller.ullberg.io/job-wait":      "true",
+	})
+
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Build a base client with the object
+	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(obj).Build()
+
+	// use top-level completeCreateClient
+
+	r, _, _ := newWatcher(t, gvk, obj)
+	r.Annotations.OnDeleteJob = "object-lease-controller.ullberg.io/on-delete-job"
+	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
+
+	r.Client = &completeCreateClient{Client: base}
+	r.Recorder = record.NewFakeRecorder(10)
+
+	reg := withIsolatedRegistry(t)
+	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+
+	// handleExpired should create job, wait for it, and record completion
+	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("handleExpired returned error: %v", err)
+	}
+
+	// Check event for CleanupJobCompleted
+	timeout := time.After(1 * time.Second)
+	found := false
+	for !found {
+		select {
+		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+			if strings.Contains(ev, "CleanupJobCompleted") {
+				found = true
+			}
+		case <-timeout:
+			t.Fatalf("expected CleanupJobCompleted event but none found")
+		}
+	}
+
+	// Check metrics
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "object_lease_controller_cleanup_jobs_completed_total" {
+			if mf.Metric[0].GetCounter().GetValue() <= 0 {
+				t.Fatalf("cleanup jobs completed metric should be incremented")
+			}
+			return
+		}
+	}
+	t.Fatalf("cleanup_jobs_completed_total not found in metrics")
 }
 
 func TestOnlyWithTTLAnnotation_Update_NilOldOrNew(t *testing.T) {
@@ -1061,11 +1453,12 @@ func TestReconcile_MetricsOnError(t *testing.T) {
 
 	// base client holds the object listed by handleNamespaceEvents
 	base := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).WithObjects(u).Build()
+	reg := withIsolatedRegistry(t)
 	// watcher uses erroring client for reconcile
 	r := &LeaseWatcher{Client: &erroringClient{client: base, err: fmt.Errorf("boom")}, GVK: gvk, Annotations: defaultAnn()}
-	// metrics enabled
-	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
+	// metrics enabled
+	// no-op
 
 	_, err := r.Reconcile(context.Background(), controller_runtime.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "e1"}})
 	if err == nil {

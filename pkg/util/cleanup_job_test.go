@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -97,6 +99,65 @@ func TestParseCleanupJobConfig_InvalidFormat(t *testing.T) {
 	}
 	if config != nil {
 		t.Errorf("Expected nil config, got %v", config)
+	}
+}
+
+func TestParseCleanupJobConfig_InvalidWait(t *testing.T) {
+	annotations := map[string]string{
+		"on-delete-job": "scripts/cleanup.sh",
+		"job-wait":      "notabool",
+	}
+	annotationKeys := map[string]string{
+		"OnDeleteJob": "on-delete-job",
+		"JobWait":     "job-wait",
+	}
+
+	cfg, err := ParseCleanupJobConfig(annotations, annotationKeys)
+	if err == nil {
+		t.Fatalf("expected error for invalid job-wait, got nil, config=%v", cfg)
+	}
+}
+
+func TestParseCleanupJobConfig_InvalidTimeout(t *testing.T) {
+	annotations := map[string]string{
+		"on-delete-job": "scripts/cleanup.sh",
+		"job-timeout":   "not-a-duration",
+	}
+	annotationKeys := map[string]string{
+		"OnDeleteJob": "on-delete-job",
+		"JobTimeout":  "job-timeout",
+	}
+
+	cfg, err := ParseCleanupJobConfig(annotations, annotationKeys)
+	if err == nil {
+		t.Fatalf("expected error for invalid job-timeout, got nil, config=%v", cfg)
+	}
+}
+
+func TestParseCleanupJobConfig_InvalidTTLAndBackoff(t *testing.T) {
+	annotations := map[string]string{
+		"on-delete-job":     "scripts/cleanup.sh",
+		"job-ttl":           "notAnInt",
+		"job-backoff-limit": "notAnInt",
+	}
+	annotationKeys := map[string]string{
+		"OnDeleteJob":     "on-delete-job",
+		"JobTTL":          "job-ttl",
+		"JobBackoffLimit": "job-backoff-limit",
+	}
+
+	// TTL parse error
+	cfg, err := ParseCleanupJobConfig(annotations, annotationKeys)
+	if err == nil {
+		t.Fatalf("expected error for invalid job-ttl, got nil, config=%v", cfg)
+	}
+
+	// backoff limit error
+	// switch TTL to a valid integer so we hit the backoff parse code path
+	annotations["job-ttl"] = "120"
+	cfg, err = ParseCleanupJobConfig(annotations, annotationKeys)
+	if err == nil {
+		t.Fatalf("expected error for invalid job-backoff-limit, got nil, config=%v", cfg)
 	}
 }
 
@@ -219,6 +280,99 @@ func TestCreateCleanupJob(t *testing.T) {
 	}
 }
 
+// failCreateClient returns an error for Create() to simulate job creation failure
+type failCreateClient struct{ client.Client }
+
+func (c *failCreateClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	return fmt.Errorf("create error")
+}
+
+func TestCreateCleanupJob_FailsOnClientCreate(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := &failCreateClient{Client: base}
+
+	obj := &unstructured.Unstructured{}
+	obj.SetName("fail-obj")
+	obj.SetNamespace("default")
+
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+
+	cfg := &CleanupJobConfig{
+		ConfigMapName:           "cm",
+		ScriptKey:               "script",
+		ServiceAccount:          DefaultServiceAccount,
+		Image:                   DefaultJobImage,
+		TTLSecondsAfterFinished: DefaultJobTTL,
+		BackoffLimit:            DefaultJobBackoffLimit,
+	}
+
+	// Should return error because Create fails
+	if _, err := CreateCleanupJob(context.Background(), fc, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
+		t.Fatalf("expected CreateCleanupJob to return error on client.Create failure")
+	}
+}
+
+func TestCreateCleanupJob_LabelsMarshalError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	obj := &unstructured.Unstructured{}
+	obj.SetName("test-obj")
+	obj.SetNamespace("test-ns")
+
+	gvk := schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "TestKind"}
+
+	cfg := &CleanupJobConfig{ConfigMapName: "cm", ScriptKey: "script"}
+
+	// Override jsonMarshal to simulate JSON errors
+	old := jsonMarshal
+	jsonMarshal = func(v interface{}) ([]byte, error) { return nil, fmt.Errorf("json error") }
+	defer func() { jsonMarshal = old }()
+
+	if _, err := CreateCleanupJob(context.Background(), client, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
+		t.Fatalf("expected error creating job when labels JSON marshal fails")
+	}
+}
+
+func TestCreateCleanupJob_AnnotationsMarshalError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	obj := &unstructured.Unstructured{}
+	obj.SetName("test-obj")
+	obj.SetNamespace("test-ns")
+
+	gvk := schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "TestKind"}
+
+	cfg := &CleanupJobConfig{ConfigMapName: "cm", ScriptKey: "script"}
+
+	// jsonMarshal should succeed for labels (first call) then fail for annotations (second call)
+	old := jsonMarshal
+	calls := 0
+	jsonMarshal = func(v interface{}) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return old(v)
+		}
+		return nil, fmt.Errorf("json annotations error")
+	}
+	defer func() { jsonMarshal = old }()
+
+	if _, err := CreateCleanupJob(context.Background(), client, obj, gvk, cfg, time.Now(), time.Now()); err == nil {
+		t.Fatalf("expected error creating job when annotations JSON marshal fails")
+	}
+}
+
 func TestWaitForJobCompletion_Success(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = batchv1.AddToScheme(scheme)
@@ -265,5 +419,57 @@ func TestWaitForJobCompletion_Timeout(t *testing.T) {
 	err := WaitForJobCompletion(context.Background(), client, job, 1*time.Second)
 	if err == nil {
 		t.Errorf("Expected timeout error, got nil")
+	}
+}
+
+func TestWaitForJobCompletion_Failed(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-failed",
+			Namespace: "test-ns",
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{
+					Type:    batchv1.JobFailed,
+					Status:  corev1.ConditionTrue,
+					Message: "failed by test",
+				},
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+
+	err := WaitForJobCompletion(context.Background(), client, job, 10*time.Second)
+	if err == nil {
+		t.Errorf("Expected job failed error, got nil")
+	}
+}
+
+// failGetClient returns error from Get()
+type failGetClient struct{ client.Client }
+
+func (f *failGetClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return fmt.Errorf("get error")
+}
+
+func TestWaitForJobCompletion_GetError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = batchv1.AddToScheme(scheme)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-job", Namespace: "ns"},
+	}
+
+	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	fc := &failGetClient{Client: base}
+
+	err := WaitForJobCompletion(context.Background(), fc, job, 10*time.Second)
+	if err == nil {
+		t.Fatalf("expected error when Get fails, got nil")
 	}
 }
