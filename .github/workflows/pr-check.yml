@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Install pre-commit
         run: sudo apt-get update -y && sudo apt-get install -y pre-commit codespell gitleaks
-      
+
       - name: Install golangci/golangci-lint
         run: |
           export GOLANGCI_LINT_VERSION=2.6.2
