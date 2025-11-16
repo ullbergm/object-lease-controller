@@ -4,28 +4,54 @@ repos:
       hooks:
           - id: trailing-whitespace
           - id: end-of-file-fixer
-          # - id: check-yaml
-          #   args: [--allow-multiple-documents]
+          - id: check-yaml
+            args: [--allow-multiple-documents]
+            # Don't try to validate Helm chart templates — they contain Go
+            # templating and are not valid YAML until rendered.
+            exclude: ^object-lease-operator/helm-charts/
           - id: check-json
-          # - id: check-added-large-files
           - id: detect-private-key
           - id: no-commit-to-branch
-    # - repo: https://github.com/golangci/golangci-lint
-    #   rev: v2.2.2
-    #   hooks:
-    #       - id: golangci-lint
-    #         name: golangci-lint
-    #         description: Fast linters runner for Go. Note that only modified files are linted, so linters like 'unused' that need to scan all files won't work as expected.
-    #         entry: golangci-lint run --fix
-    #         types: [go]
-    #         language: golang
-    #         require_serial: true
-    #         pass_filenames: false
-    #       - id: golangci-lint-fmt
-    #         name: golangci-lint-fmt
-    #         description: Fast linters runner for Go. Note that only modified files are linted, so linters like 'unused' that need to scan all files won't work as expected.
-    #         entry: golangci-lint fmt
-    #         types: [go]
-    #         language: golang
-    #         require_serial: true
-    #         pass_filenames: false
+
+    - repo: local
+      hooks:
+          - id: shellcheck
+            name: Shellcheck
+            entry: shellcheck -x
+            language: system
+            files: ^(scripts/|run.sh$|.*\.sh$)
+
+          - id: gitleaks
+            name: Gitleaks (secrets scanner)
+            entry: gitleaks detect
+            pass_filenames: false
+            always_run: true
+            language: system
+
+          - id: codespell
+            name: Codespell (spell check docs)
+            entry: codespell
+            language: system
+            # Only run on docs and README to avoid noisy suggestions in tests/code
+            files: ^(README.md|docs/|object-lease-console-plugin/)
+
+          - id: make-vet
+            name: Run `go vet`
+            entry: make vet
+            language: system
+            pass_filenames: false
+            always_run: true
+
+          - id: make-fmt
+            name: Run repository formatter (go fmt)
+            entry: make fmt
+            language: system
+            pass_filenames: false
+            always_run: true
+
+          - id: make-lint
+            name: Run repository linter
+            entry: make lint
+            language: system
+            pass_filenames: false
+            always_run: true

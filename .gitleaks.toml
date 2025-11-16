@@ -1,0 +1,8 @@
+title = "gitleaks: project custom allowlist"
+
+useDefault = true
+
+[[allowlists]]
+description = "Ignore known example keys in examples/cleanup"
+paths = [ '''examples/cleanup/backup-to-s3.yaml''' ]
+targetRules = [ "aws-access-token" ]

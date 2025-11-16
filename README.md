@@ -13,7 +13,7 @@ This project implements a Kubernetes operator that allows you to specify a TTL (
 ## Features
 - Deploys as an operator.
 - Dynamically deploys a controller for each configured GVK.
-- Controllers are only managing one GVK each, increasing scaleability.
+- Controllers are only managing one GVK each, increasing scalability.
 - Leader election support for high availability.
 - Custom cleanup scripts via Kubernetes Jobs before object deletion.
 
