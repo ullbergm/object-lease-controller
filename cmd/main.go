@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -32,6 +33,16 @@ const (
 	AnnLeaseStart = "object-lease-controller.ullberg.io/lease-start" // RFC3339 UTC
 	AnnExpireAt   = "object-lease-controller.ullberg.io/expire-at"
 	AnnStatus     = "object-lease-controller.ullberg.io/lease-status"
+
+	// Cleanup job annotation keys
+	AnnOnDeleteJob       = "object-lease-controller.ullberg.io/on-delete-job"
+	AnnJobServiceAccount = "object-lease-controller.ullberg.io/job-service-account"
+	AnnJobImage          = "object-lease-controller.ullberg.io/job-image"
+	AnnJobWait           = "object-lease-controller.ullberg.io/job-wait"
+	AnnJobTimeout        = "object-lease-controller.ullberg.io/job-timeout"
+	AnnJobTTL            = "object-lease-controller.ullberg.io/job-ttl"
+	AnnJobBackoffLimit   = "object-lease-controller.ullberg.io/job-backoff-limit"
+	AnnJobEnvSecrets     = "object-lease-controller.ullberg.io/job-env-secrets"
 )
 
 // ParseParams holds runtime configuration parsed from flags and environment.
@@ -57,9 +68,18 @@ var statFn = os.Stat
 var readFileFn = os.ReadFile
 
 func main() {
-	ctrl.SetLogger(zap.New())
+	// Bind zap logging flags (e.g., -zap-log-level) to the global flag set
+	// so callers (and the Makefile) can adjust verbosity. Don't set the
+	// logger until after flags are parsed so the selected level is applied.
+	var zapOpts zap.Options
+	zapOpts.BindFlags(flag.CommandLine)
 
 	params := parseParameters()
+
+	// Set logger using the parsed zap options (this reads values parsed by
+	// parseParameters which calls flag.Parse()). This allows callers to pass
+	// flags like -zap-log-level=debug to control verbosity.
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
 	enableLeaderElection, leaderElectionNamespace, errE := parseLeaderElectionConfig(params.LeaderElectionEnabled, params.LeaderElectionNamespace)
 	if errE != nil {
@@ -75,6 +95,7 @@ func main() {
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
 
 	gvk := schema.GroupVersionKind{
 		Group:   params.Group,
@@ -266,7 +287,11 @@ func buildManagerOptions(scheme *runtime.Scheme, group, version, kind string, me
 		Metrics:                       metricsServerOptions,
 		HealthProbeBindAddress:        probeAddr,
 		Cache: cache.Options{
-			DefaultTransform: util.MinimalObjectTransform(AnnTTL, AnnLeaseStart, AnnExpireAt, AnnStatus),
+			DefaultTransform: util.MinimalObjectTransform(
+				AnnTTL, AnnLeaseStart, AnnExpireAt, AnnStatus,
+				AnnOnDeleteJob, AnnJobServiceAccount, AnnJobImage, AnnJobWait,
+				AnnJobTimeout, AnnJobTTL, AnnJobBackoffLimit,
+			),
 		},
 	}
 	if pprofAddr != "" {
@@ -284,10 +309,18 @@ func newLeaseWatcher(mgr ctrl.Manager, gvk schema.GroupVersionKind, leaderElecti
 		GVK:      gvk,
 		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
 		Annotations: controllers.Annotations{
-			TTL:        AnnTTL,
-			LeaseStart: AnnLeaseStart,
-			ExpireAt:   AnnExpireAt,
-			Status:     AnnStatus,
+			TTL:               AnnTTL,
+			LeaseStart:        AnnLeaseStart,
+			ExpireAt:          AnnExpireAt,
+			Status:            AnnStatus,
+			OnDeleteJob:       AnnOnDeleteJob,
+			JobServiceAccount: AnnJobServiceAccount,
+			JobImage:          AnnJobImage,
+			JobWait:           AnnJobWait,
+			JobTimeout:        AnnJobTimeout,
+			JobTTL:            AnnJobTTL,
+			JobBackoffLimit:   AnnJobBackoffLimit,
+			JobEnvSecrets:     AnnJobEnvSecrets,
 		},
 		Metrics: ometrics.NewLeaseMetrics(gvk),
 	}

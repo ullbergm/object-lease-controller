@@ -13,8 +13,9 @@ This project implements a Kubernetes operator that allows you to specify a TTL (
 ## Features
 - Deploys as an operator.
 - Dynamically deploys a controller for each configured GVK.
-- Controllers are only managing one GVK each, increasing scaleability.
+- Controllers are only managing one GVK each, increasing scalability.
 - Leader election support for high availability.
+- Custom cleanup scripts via Kubernetes Jobs before object deletion.
 
 ## Architecture
 The operator is designed to be highly extensible and scalable. Once deployed, the operator looks for CRDs and for each GVK specified in a CRD, a dedicated controller is launched.
@@ -134,6 +135,64 @@ Set by the controller. RFC3339 UTC timestamp for when the object will expire. Sa
 
 Set by the controller. Human readable status or validation errors.
 
+### Cleanup Job Annotations
+
+The controller supports running custom cleanup scripts via Kubernetes Jobs before deleting expired objects. This is useful for backing up data, notifying external systems, or cleaning up related resources.
+
+#### object-lease-controller.ullberg.io/on-delete-job
+
+**Required for cleanup jobs**. Specifies the ConfigMap and script key in the format `configmap-name/script-key`.
+
+Example:
+```bash
+kubectl annotate application my-app object-lease-controller.ullberg.io/on-delete-job=cleanup-scripts/backup.sh
+```
+
+#### object-lease-controller.ullberg.io/job-service-account
+
+**Optional** (default: `default`). ServiceAccount to run the cleanup Job as. Use this to grant the cleanup script access to necessary permissions and secrets.
+
+#### object-lease-controller.ullberg.io/job-image
+
+**Optional** (default: `bitnami/kubectl:latest`). Container image for running the cleanup script.
+
+#### object-lease-controller.ullberg.io/job-wait
+
+**Optional** (default: `false`). If `true`, the controller waits for the Job to complete before deleting the object. If `false`, the Job runs in fire-and-forget mode.
+
+#### object-lease-controller.ullberg.io/job-timeout
+
+**Optional** (default: `5m`). Maximum time to wait for Job completion when `job-wait` is `true`. Supports flexible duration format (e.g., `10m`, `1h`, `30s`).
+
+#### object-lease-controller.ullberg.io/job-ttl
+
+**Optional** (default: `300`). TTL in seconds for Job cleanup via `ttlSecondsAfterFinished`.
+
+#### object-lease-controller.ullberg.io/job-backoff-limit
+
+**Optional** (default: `3`). Number of retries for failed Jobs.
+
+### Cleanup Job Environment Variables
+
+Cleanup scripts receive these environment variables:
+
+- `OBJECT_NAME` - Name of the object being deleted
+- `OBJECT_NAMESPACE` - Namespace of the object
+- `OBJECT_KIND` - Kind (e.g., "Application")
+- `OBJECT_GROUP` - API group (e.g., "startpunkt.ullberg.us")
+- `OBJECT_VERSION` - API version (e.g., "v1alpha2")
+- `OBJECT_UID` - UID of the object
+- `OBJECT_RESOURCE_VERSION` - Resource version
+- `LEASE_STARTED_AT` - RFC3339 timestamp when lease started
+- `LEASE_EXPIRED_AT` - RFC3339 timestamp when lease expired
+- `OBJECT_LABELS` - JSON-encoded labels
+- `OBJECT_ANNOTATIONS` - JSON-encoded annotations
+
+See [examples/cleanup/](examples/cleanup/) for complete examples including:
+- Backing up to S3
+- Webhook notifications
+- Cleaning up related Kubernetes resources
+
 ### Removing TTL
 
 Remove `ttl` to stop lease management. The controller clears `lease-start`, `expire-at`, and `lease-status`.
@@ -146,6 +205,12 @@ kubectl annotate pod test object-lease-controller.ullberg.io/ttl-
 - Automatically manage leases for custom resources (e.g., Applications, Databases, Services)
 - Enforce expiration policies
 - Integrate with external systems for lease validation or renewal
+- Execute custom cleanup scripts before object deletion:
+  - Back up data to external storage (S3, GCS, etc.)
+  - Notify external systems or webhooks
+  - Clean up dependent resources not covered by owner references
+  - Archive logs or metrics
+  - Graceful shutdown procedures
 
 ## Usage
 

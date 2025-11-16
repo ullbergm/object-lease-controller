@@ -1,0 +1,115 @@
+---
+# ConfigMap containing the backup script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cleanup-scripts
+  namespace: demo
+data:
+  backup-to-s3.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Starting backup of $OBJECT_NAME from namespace $OBJECT_NAMESPACE"
+    echo "Object Kind: $OBJECT_KIND"
+    echo "Lease started: $LEASE_STARTED_AT"
+    echo "Lease expired: $LEASE_EXPIRED_AT"
+
+    # Fetch the object and save to local file
+    BACKUP_FILE="/tmp/backup-${OBJECT_NAME}-$(date +%s).yaml"
+    kubectl get $OBJECT_KIND $OBJECT_NAME -n $OBJECT_NAMESPACE -o yaml > "$BACKUP_FILE"
+
+    echo "Object saved to $BACKUP_FILE"
+
+    # Upload to S3 (requires AWS credentials from ServiceAccount secrets)
+    # The AWS CLI reads credentials from environment variables or ~/.aws/credentials
+    BUCKET="${BACKUP_S3_BUCKET:-backups}"
+    S3_PATH="s3://$BUCKET/$OBJECT_NAMESPACE/$OBJECT_KIND/$OBJECT_NAME-$(date +%s).yaml"
+
+    if command -v aws &> /dev/null; then
+        echo "Uploading to $S3_PATH"
+        aws s3 cp "$BACKUP_FILE" "$S3_PATH"
+        echo "Backup complete: $S3_PATH"
+    else
+        echo "AWS CLI not available, skipping S3 upload"
+        echo "File saved locally at $BACKUP_FILE"
+    fi
+
+    echo "Cleanup completed successfully"
+
+---
+# ServiceAccount with AWS credentials
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: demo
+
+---
+# Secret containing AWS credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-credentials
+  namespace: demo
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "YOUR_AWS_ACCESS_KEY_ID"
+  AWS_SECRET_ACCESS_KEY: "YOUR_AWS_SECRET_ACCESS_KEY"
+  AWS_DEFAULT_REGION: "us-east-1"
+
+---
+# Role granting read access to objects
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-role
+  namespace: demo
+rules:
+- apiGroups: ["startpunkt.ullberg.us"]
+  resources: ["applications"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding connecting ServiceAccount to Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-binding
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-role
+subjects:
+- kind: ServiceAccount
+  name: backup-sa
+  namespace: demo
+
+---
+# Example Application with cleanup job configured
+apiVersion: startpunkt.ullberg.us/v1alpha2
+kind: Application
+metadata:
+  name: demo-app
+  namespace: demo
+  annotations:
+    # Lease configuration
+    object-lease-controller.ullberg.io/ttl: "2h"
+
+    # Cleanup job configuration
+    object-lease-controller.ullberg.io/on-delete-job: "cleanup-scripts/backup-to-s3.sh"
+    object-lease-controller.ullberg.io/job-image: "amazon/aws-cli:latest"
+    object-lease-controller.ullberg.io/job-service-account: "backup-sa"
+    object-lease-controller.ullberg.io/job-env-secrets: "aws-credentials"
+    object-lease-controller.ullberg.io/job-wait: "true"
+    object-lease-controller.ullberg.io/job-timeout: "10m"
+    object-lease-controller.ullberg.io/job-ttl: "600"
+    object-lease-controller.ullberg.io/job-backoff-limit: "3"
+spec:
+  name: Demo Application
+  url: https://demo.example.com
+  description: "This application will be backed up to S3 before deletion"

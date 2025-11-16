@@ -36,6 +36,10 @@ fmt: ## Format Go code
 vet: ## Vet Go code
 	go vet ./...
 
+.PHONY: lint
+lint: ## Run golangci-lint (requires golangci-lint installed)
+	golangci-lint run
+
 .PHONY: test
 test: tidy fmt vet ## Run tests with coverage
 	go test ./... -race -coverprofile=coverage.out
@@ -50,11 +54,12 @@ run: build ## Run the application locally
 	./$(BUILD_DIR)/$(BINARY_NAME) \
 		-group startpunkt.ullberg.us \
 		-kind Application \
-		-version v1alpha2 \
+		-version v1alpha4 \
 		-leader-elect \
 		-leader-elect-namespace default \
-		-opt-in-label-key "object-lease-controller.ullberg.io/enabled" \
-		-opt-in-label-value true
+# 		-opt-in-label-key "object-lease-controller.ullberg.io/enabled" \
+# 		-opt-in-label-value true \
+		-zap-log-level debug
 
 # =============================================================================
 # Docker Targets - Main Controller

@@ -40,6 +40,16 @@ type Annotations struct {
 	LeaseStart string
 	ExpireAt   string
 	Status     string
+
+	// Cleanup job annotations
+	OnDeleteJob       string
+	JobServiceAccount string
+	JobImage          string
+	JobWait           string
+	JobTimeout        string
+	JobTTL            string
+	JobBackoffLimit   string
+	JobEnvSecrets     string
 }
 
 var (
@@ -221,6 +231,7 @@ func (r *LeaseWatcher) markInvalidTTL(ctx context.Context, obj *unstructured.Uns
 
 //nolint:unparam
 func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unstructured, expireAt time.Time) (controller_runtime.Result, error) {
+	log := logger.FromContext(ctx)
 	leaseStatus := "Lease expired. Deleting object."
 	r.updateAnnotations(ctx, obj, map[string]string{
 		r.Annotations.ExpireAt: expireAt.Format(time.RFC3339),
@@ -232,10 +243,100 @@ func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unst
 	if r.Metrics != nil {
 		r.Metrics.LeasesExpired.Inc()
 	}
+
+	// Check for cleanup job configuration
+	anns := obj.GetAnnotations()
+	annotationKeys := map[string]string{
+		"OnDeleteJob":       r.Annotations.OnDeleteJob,
+		"JobServiceAccount": r.Annotations.JobServiceAccount,
+		"JobImage":          r.Annotations.JobImage,
+		"JobWait":           r.Annotations.JobWait,
+		"JobTimeout":        r.Annotations.JobTimeout,
+		"JobTTL":            r.Annotations.JobTTL,
+		"JobBackoffLimit":   r.Annotations.JobBackoffLimit,
+		"JobEnvSecrets":     r.Annotations.JobEnvSecrets,
+	}
+
+	config, err := util.ParseCleanupJobConfig(anns, annotationKeys)
+	if err != nil {
+		// Invalid configuration - log error, emit event, proceed with deletion
+		log.Error(err, "Invalid cleanup job configuration")
+		if r.Recorder != nil {
+			r.Recorder.Event(obj, "Warning", "CleanupJobConfigInvalid", fmt.Sprintf("Invalid cleanup job config: %v", err))
+		}
+	} else if config != nil {
+		// Cleanup job is configured - attempt to create and optionally wait
+		if err := r.executeCleanupJob(ctx, obj, config, expireAt); err != nil {
+			log.Error(err, "Cleanup job execution failed")
+			if r.Recorder != nil {
+				r.Recorder.Event(obj, "Warning", "CleanupJobFailed", fmt.Sprintf("Cleanup job failed: %v", err))
+			}
+			if r.Metrics != nil {
+				r.Metrics.CleanupJobsFailed.Inc()
+			}
+		}
+		// Always proceed with deletion regardless of cleanup job outcome
+	}
+
 	if err := util.DeleteWithUIDPrecondition(ctx, r.Client, obj); client.IgnoreNotFound(err) != nil {
 		return controller_runtime.Result{}, err
 	}
 	return controller_runtime.Result{}, nil
+}
+
+// executeCleanupJob creates and optionally waits for a cleanup job
+func (r *LeaseWatcher) executeCleanupJob(ctx context.Context, obj *unstructured.Unstructured, config *util.CleanupJobConfig, expireAt time.Time) error {
+	log := logger.FromContext(ctx)
+	jobStart := time.Now()
+
+	// Parse lease start time
+	anns := obj.GetAnnotations()
+	leaseStartStr := anns[r.Annotations.LeaseStart]
+	leaseStartedAt, err := time.Parse(time.RFC3339, leaseStartStr)
+	if err != nil {
+		leaseStartedAt = time.Now() // Fallback
+	}
+
+	// Create the cleanup job
+	job, err := util.CreateCleanupJob(ctx, r.Client, obj, r.GVK, config, leaseStartedAt, expireAt)
+	if err != nil {
+		return fmt.Errorf("failed to create cleanup job: %w", err)
+	}
+
+	log.Info("Cleanup job created", "job", job.Name, "namespace", job.Namespace)
+	if r.Recorder != nil {
+		r.Recorder.Event(obj, "Normal", "CleanupJobCreated", fmt.Sprintf("Created cleanup job: %s", job.Name))
+	}
+	if r.Metrics != nil {
+		r.Metrics.CleanupJobsCreated.Inc()
+	}
+
+	// If wait is enabled, wait for job completion
+	if config.Wait {
+		log.Info("Waiting for cleanup job to complete", "job", job.Name, "timeout", config.Timeout)
+		if err := util.WaitForJobCompletion(ctx, r.Client, job, config.Timeout); err != nil {
+			// Job failed or timed out
+			if r.Recorder != nil {
+				r.Recorder.Event(obj, "Warning", "CleanupJobTimeout", fmt.Sprintf("Cleanup job did not complete: %v", err))
+			}
+			return fmt.Errorf("cleanup job did not complete: %w", err)
+		}
+
+		// Job completed successfully
+		log.Info("Cleanup job completed successfully", "job", job.Name)
+		if r.Recorder != nil {
+			r.Recorder.Event(obj, "Normal", "CleanupJobCompleted", fmt.Sprintf("Cleanup job completed: %s", job.Name))
+		}
+		if r.Metrics != nil {
+			r.Metrics.CleanupJobsCompleted.Inc()
+			r.Metrics.CleanupJobDuration.Observe(time.Since(jobStart).Seconds())
+		}
+	} else {
+		// Fire-and-forget mode
+		log.Info("Cleanup job created in fire-and-forget mode", "job", job.Name)
+	}
+
+	return nil
 }
 
 func (r *LeaseWatcher) setActive(ctx context.Context, obj *unstructured.Unstructured, expireAt time.Time, now time.Time) controller_runtime.Result {
