@@ -68,4 +68,16 @@ rules:
   - patch
   - delete
 
+# Cleanup job support
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+
 # +kubebuilder:scaffold:rules

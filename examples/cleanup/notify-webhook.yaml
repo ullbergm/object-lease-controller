@@ -1,0 +1,104 @@
+---
+# ConfigMap containing the webhook notification script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-scripts
+  namespace: demo
+data:
+  notify-webhook.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Notifying webhook about deletion of $OBJECT_NAME"
+
+    # Prepare JSON payload
+    PAYLOAD=$(cat <<EOF
+    {
+      "event": "object_deleted",
+      "object": {
+        "name": "$OBJECT_NAME",
+        "namespace": "$OBJECT_NAMESPACE",
+        "kind": "$OBJECT_KIND",
+        "group": "$OBJECT_GROUP",
+        "version": "$OBJECT_VERSION",
+        "uid": "$OBJECT_UID"
+      },
+      "lease": {
+        "started_at": "$LEASE_STARTED_AT",
+        "expired_at": "$LEASE_EXPIRED_AT"
+      },
+      "labels": $OBJECT_LABELS,
+      "annotations": $OBJECT_ANNOTATIONS
+    }
+    EOF
+    )
+
+    # Send webhook notification
+    WEBHOOK_URL="${WEBHOOK_URL:-https://webhook.example.com/events}"
+
+    echo "Sending notification to $WEBHOOK_URL"
+
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WEBHOOK_URL" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer ${WEBHOOK_TOKEN}" \
+      -d "$PAYLOAD")
+
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+    if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+        echo "Webhook notification sent successfully (HTTP $HTTP_CODE)"
+        echo "Response: $RESPONSE_BODY"
+    else
+        echo "Webhook notification failed (HTTP $HTTP_CODE)"
+        echo "Response: $RESPONSE_BODY"
+        exit 1
+    fi
+
+    echo "Notification completed successfully"
+
+---
+# ServiceAccount for webhook notifications
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: webhook-sa
+  namespace: demo
+
+---
+# Secret containing webhook token (linked to ServiceAccount)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: webhook-token
+  namespace: demo
+  annotations:
+    kubernetes.io/service-account.name: webhook-sa
+type: Opaque
+stringData:
+  WEBHOOK_TOKEN: "your-webhook-token-here"
+  WEBHOOK_URL: "https://webhook.example.com/events"
+
+---
+# Example Application with webhook notification
+apiVersion: startpunkt.ullberg.us/v1alpha2
+kind: Application
+metadata:
+  name: webhook-app
+  namespace: demo
+  annotations:
+    # Lease configuration
+    object-lease-controller.ullberg.io/ttl: "30m"
+
+    # Cleanup job configuration - fire and forget
+    object-lease-controller.ullberg.io/on-delete-job: "webhook-scripts/notify-webhook.sh"
+    object-lease-controller.ullberg.io/job-image: "curlimages/curl:latest"
+    object-lease-controller.ullberg.io/job-service-account: "webhook-sa"
+    object-lease-controller.ullberg.io/job-wait: "false"
+    object-lease-controller.ullberg.io/job-timeout: "2m"
+    object-lease-controller.ullberg.io/job-ttl: "300"
+spec:
+  name: Webhook Demo Application
+  url: https://webhook-demo.example.com
+  description: "This application notifies a webhook before deletion"

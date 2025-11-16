@@ -16,6 +16,12 @@ type LeaseMetrics struct {
 	InvalidTTL        prometheus.Counter
 	ReconcileErrors   prometheus.Counter
 	ReconcileDuration prometheus.Histogram
+
+	// Cleanup job metrics
+	CleanupJobsCreated   prometheus.Counter
+	CleanupJobsFailed    prometheus.Counter
+	CleanupJobsCompleted prometheus.Counter
+	CleanupJobDuration   prometheus.Histogram
 }
 
 // NewLeaseMetrics registers and returns metrics scoped to a specific GVK via const labels.
@@ -64,6 +70,31 @@ func NewLeaseMetrics(gvk schema.GroupVersionKind) *LeaseMetrics {
 			Buckets:     prometheus.DefBuckets,
 			ConstLabels: constLabels,
 		}),
+		CleanupJobsCreated: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace:   "object_lease_controller",
+			Name:        "cleanup_jobs_created_total",
+			Help:        "Number of cleanup jobs created",
+			ConstLabels: constLabels,
+		}),
+		CleanupJobsFailed: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace:   "object_lease_controller",
+			Name:        "cleanup_jobs_failed_total",
+			Help:        "Number of cleanup jobs that failed",
+			ConstLabels: constLabels,
+		}),
+		CleanupJobsCompleted: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace:   "object_lease_controller",
+			Name:        "cleanup_jobs_completed_total",
+			Help:        "Number of cleanup jobs that completed successfully",
+			ConstLabels: constLabels,
+		}),
+		CleanupJobDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:   "object_lease_controller",
+			Name:        "cleanup_job_duration_seconds",
+			Help:        "Duration of cleanup job execution in seconds",
+			Buckets:     prometheus.DefBuckets,
+			ConstLabels: constLabels,
+		}),
 	}
 
 	crmetrics.Registry.MustRegister(
@@ -73,6 +104,10 @@ func NewLeaseMetrics(gvk schema.GroupVersionKind) *LeaseMetrics {
 		m.InvalidTTL,
 		m.ReconcileErrors,
 		m.ReconcileDuration,
+		m.CleanupJobsCreated,
+		m.CleanupJobsFailed,
+		m.CleanupJobsCompleted,
+		m.CleanupJobDuration,
 	)
 
 	// Ensure info is visible.
