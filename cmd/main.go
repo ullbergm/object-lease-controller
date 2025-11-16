@@ -69,6 +69,9 @@ var exitFn = os.Exit
 // Allow injection of controller manager constructor in tests
 var newManager = ctrl.NewManager
 
+// Allow injection of config retrieval for testing
+var getConfig = ctrl.GetConfigOrDie
+
 // Allow injection for testing
 var statFn = os.Stat
 var readFileFn = os.ReadFile
@@ -121,7 +124,7 @@ func run(params ParseParams) {
 
 	mgrOpts := buildManagerOptions(scheme, params.Group, params.Version, params.Kind, params.MetricsBindAddress, params.HealthProbeBindAddress, params.PprofBindAddress, enableLeaderElection, leaderElectionNamespace)
 
-	mgr, err := newManager(ctrl.GetConfigOrDie(), mgrOpts)
+	mgr, err := newManager(getConfig(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		panic(err)

@@ -250,12 +250,22 @@ func TestMain_Run(t *testing.T) {
 	// Save global state
 	oldArgs := os.Args
 	oldNewMgr := newManager
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNewMgr })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNewMgr
+		getConfig = oldGetConfig
+	})
 
 	// Minimal fake manager
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	mov := &fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}
+
+	// Override getConfig to return a fake config
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 
 	// Override newManager to return our fake manager
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) {
