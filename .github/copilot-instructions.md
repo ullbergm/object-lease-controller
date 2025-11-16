@@ -55,7 +55,7 @@ cd object-lease-console-plugin && yarn start
 ### Multi-Platform Builds
 Both controller and operator use `docker buildx` for multi-arch:
 - Controller: `PLATFORMS=linux/arm64,linux/amd64`
-- Operator: Includes `linux/s390x,linux/ppc64le` for enterprise support
+- Operator: `PLATFORMS=linux/arm64,linux/amd64`
 
 ### Testing Strategy
 ```bash

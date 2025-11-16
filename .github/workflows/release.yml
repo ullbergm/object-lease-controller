@@ -18,6 +18,8 @@ env:
   PLUGIN_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-console-plugin
   BUNDLE_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-operator-bundle
   CATALOG_IMAGE: ghcr.io/${{ github.repository_owner }}/object-lease-operator-catalog
+  # Platforms to build for. Keep this single-sourced to make release changes simpler.
+  PLATFORMS: linux/arm64,linux/amd64
 
 permissions:
   contents: write
@@ -79,7 +81,7 @@ jobs:
         run: |
           make docker-buildx \
             IMG=${{ env.CONTROLLER_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
-            PLATFORMS=linux/arm64,linux/amd64
+            PLATFORMS=${{ env.PLATFORMS }}
 
       - name: Tag Latest
         run: |
@@ -128,7 +130,7 @@ jobs:
         run: |
           make plugin-buildx \
             PLUGIN_IMG=${{ env.PLUGIN_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
-            PLATFORMS=linux/arm64,linux/amd64
+            PLATFORMS=${{ env.PLATFORMS }}
 
       - name: Tag Latest
         run: |
@@ -166,7 +168,7 @@ jobs:
           make docker-buildx \
             IMG=${{ env.OPERATOR_IMAGE }}:${{ needs.prepare.outputs.version_tag }} \
             VERSION=${{ needs.prepare.outputs.version }} \
-            PLATFORMS=linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+            PLATFORMS=${{ env.PLATFORMS }}
 
       - name: Tag Latest
         run: |
@@ -253,17 +255,8 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          if [ -n "$PREV_TAG" ]; then
-            CHANGES=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
-          else
-            CHANGES=$(git log --pretty=format:"- %s (%h)" --no-merges)
-          fi
-
           cat << 'FEOF' > release_notes.md
-          ## Object Lease Controller v${VERSION}
+          ## Object Lease Controller v${{ needs.prepare.outputs.version_tag }}
 
           ### Container Images
 
@@ -298,9 +291,6 @@ jobs:
           ```bash
           kubectl apply -k github.com/ullbergm/object-lease-controller/object-lease-operator/config/default?ref=${{ needs.prepare.outputs.version_tag }}
           ```
-
-          ### Changes
-          ${CHANGES}
           FEOF
 
           cat release_notes.md

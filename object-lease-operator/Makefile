@@ -16,7 +16,9 @@ OPM_VERSION ?= v1.55.0
 
 # Build configuration
 CONTAINER_TOOL ?= docker
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+# Keep platforms consistent with top-level Makefile and the console plugin
+# Supported platforms: arm64 and amd64
+PLATFORMS ?= linux/arm64,linux/amd64
 USE_IMAGE_DIGESTS ?= false
 
 # Bundle configuration
