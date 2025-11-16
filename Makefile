@@ -54,7 +54,7 @@ FUZZ_TIME ?= 15s
 
 fuzz:
 	@set -e; \
-	files=$$(find pkg -name '*_fuzz_test.go' -print); \
+	files=$$(find . -name '*_fuzz_test.go' -not -path './.git/*' -print); \
 	if [ -z "$$files" ]; then \
 		echo "No fuzz files found"; exit 0; \
 	fi; \
