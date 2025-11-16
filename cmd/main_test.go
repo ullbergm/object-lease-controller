@@ -477,8 +477,16 @@ func TestMain_ExitsOnMissingGVK(t *testing.T) {
 	// Save global state
 	oldArgs := os.Args
 	oldExit := exitFn
-	t.Cleanup(func() { os.Args = oldArgs; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
 	// Ensure no flags or envs provide GVK
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
@@ -504,7 +512,17 @@ func TestMain_ExitsOnMissingGVK(t *testing.T) {
 func TestMain_NewManagerErrorPanics(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
+
+	// Mock getConfig
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 
 	// newManager returns an error to trigger panic
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
@@ -553,10 +571,19 @@ func TestMain_AddMetricsErrorExits(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &failAlertsManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
@@ -577,10 +604,19 @@ func TestMain_HealthzErrorExits(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &failHealthzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
@@ -601,10 +637,19 @@ func TestMain_ReadyzErrorExits(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
 	oldExit := exitFn
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &failReadyzManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
@@ -624,10 +669,18 @@ func TestMain_ReadyzErrorExits(t *testing.T) {
 func TestMain_StartFailsPanics(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	mov := &startFailManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
 
@@ -645,11 +698,19 @@ func TestMain_StartFailsPanics(t *testing.T) {
 func TestMain_ParseLeaderElectionConfigInvalidEnv(t *testing.T) {
 	oldArgs := os.Args
 	oldExit := exitFn
-	t.Cleanup(func() { os.Args = oldArgs; exitFn = oldExit })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		exitFn = oldExit
+		getConfig = oldGetConfig
+	})
 
 	os.Setenv("LEASE_LEADER_ELECTION", "notabool")
 	defer os.Unsetenv("LEASE_LEADER_ELECTION")
 
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	exitFn = func(code int) { panic(fmt.Sprintf("exited %d", code)) }
 
 	os.Args = []string{"cmd", "-group=apps", "-version=v1", "-kind=ConfigMap"}
@@ -664,10 +725,18 @@ func TestMain_ParseLeaderElectionConfigInvalidEnv(t *testing.T) {
 func TestMain_LWSetupFailsPanics(t *testing.T) {
 	oldArgs := os.Args
 	oldNew := newManager
-	t.Cleanup(func() { os.Args = oldArgs; newManager = oldNew })
+	oldGetConfig := getConfig
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		newManager = oldNew
+		getConfig = oldGetConfig
+	})
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	getConfig = func() *rest.Config {
+		return &rest.Config{}
+	}
 	// Use a manager where Add returns error so SetupWithManager fails
 	mov := &errAddManager{fakeManager{client: fake.NewClientBuilder().WithScheme(scheme).Build(), scheme: scheme}}
 	newManager = func(cfg *rest.Config, opts ctrl.Options) (ctrl.Manager, error) { return mov, nil }
