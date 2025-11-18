@@ -74,6 +74,13 @@ fuzz:
 build: tidy fmt vet test ## Build the binary
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/main.go
 
+.PHONY: build-webhook
+build-webhook: tidy fmt vet test ## Build the webhook binary
+	go build -o $(BUILD_DIR)/lease-webhook ./cmd/webhook/main.go
+
+.PHONY: build-all
+build-all: build build-webhook ## Build all binaries
+
 .PHONY: run
 run: build ## Run the application locally
 	./$(BUILD_DIR)/$(BINARY_NAME) \
@@ -85,6 +92,10 @@ run: build ## Run the application locally
 # 		-opt-in-label-key "object-lease-controller.ullberg.io/enabled" \
 # 		-opt-in-label-value true \
 		-zap-log-level debug
+
+.PHONY: run-webhook
+run-webhook: build-webhook ## Run the webhook server locally
+	./$(BUILD_DIR)/lease-webhook
 
 # =============================================================================
 # Docker Targets - Main Controller
