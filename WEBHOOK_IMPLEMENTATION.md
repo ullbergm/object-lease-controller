@@ -69,10 +69,10 @@ Successfully implemented a **validating admission webhook** for the Object Lease
   - ClusterIP service on port 443
   - Routes to webhook pods on port 9443
 
-- **`object-lease-operator/config/manager/webhook-certificate.yaml`**
-  - cert-manager Certificate resource
-  - Self-signed Issuer for automatic cert management
-  - Auto-renewal handled by cert-manager
+- **`object-lease-operator/config/manager/webhook-service.yaml`**
+  - Uses `service.beta.openshift.io/serving-cert-secret-name` annotation for OLM/OpenShift certificate management
+  - OLM automatically creates and rotates certificates
+  - No need for cert-manager
 
 #### RBAC
 - **`object-lease-operator/config/rbac/webhook_serviceaccount.yaml`**
@@ -147,7 +147,7 @@ metadata:
 1. **Webhook Deployment**:
    - Operator deploys single webhook deployment
    - Webhook server starts and watches LeaseController CRs
-   - cert-manager provisions TLS certificates
+   - OLM/service-ca provisions TLS certificates automatically
 
 2. **Dynamic Configuration**:
    - When LeaseController CR is created with `webhook.enabled: true`
@@ -187,7 +187,7 @@ metadata:
 - **Read-only filesystem**: Container filesystem is immutable
 - **Seccomp profile**: Uses RuntimeDefault
 - **TLS encryption**: All webhook calls encrypted with TLS 1.2+
-- **cert-manager integration**: Automatic certificate rotation
+- **OLM/service-ca integration**: Automatic certificate rotation via service-ca-operator
 
 ## Cleanup and Finalizers
 
@@ -232,20 +232,27 @@ The webhook uses **Kubernetes finalizers** to ensure proper cleanup:
 ## Dependencies
 
 ### Required
-- **cert-manager**: For automatic TLS certificate management
+- **OLM or OpenShift**: For automatic TLS certificate management via service-ca-operator
 - **Kubernetes 1.16+**: For admissionregistration.k8s.io/v1
+
+**Note**: When deployed via OLM, certificates are automatically managed. For non-OLM deployments, you can use cert-manager or manually provision certificates.
 
 ### Optional
 - None (webhook is entirely optional feature)
 
 ## Deployment Steps
 
-1. **Install cert-manager** (if not already installed):
+### Via OLM (Recommended for OpenShift)
+
+1. **Install operator via OLM**:
    ```bash
-   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+   # OLM automatically handles certificate management
+   operator-sdk run bundle ghcr.io/ullbergm/object-lease-operator-bundle:v1.0.0
    ```
 
-2. **Build and push webhook image**:
+### Manual Deployment
+
+1. **Build and push webhook image**:
    ```bash
    make webhook-buildx WEBHOOK_IMG=ghcr.io/yourorg/object-lease-webhook:v1.0.0
    ```

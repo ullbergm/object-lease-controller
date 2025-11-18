@@ -117,26 +117,33 @@ annotations:
 
 ## Certificate Management
 
-The webhook requires TLS certificates. The operator includes a cert-manager Certificate resource:
+The webhook requires TLS certificates. When deployed via OLM or on OpenShift, certificates are automatically managed via the service-ca-operator:
 
 ```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
+apiVersion: v1
+kind: Service
 metadata:
-  name: object-lease-webhook-cert
+  name: object-lease-webhook-service
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: object-lease-webhook-cert
 spec:
-  dnsNames:
-  - object-lease-webhook-service.system.svc
-  - object-lease-webhook-service.system.svc.cluster.local
-  issuerRef:
-    kind: Issuer
-    name: object-lease-webhook-issuer
-  secretName: object-lease-webhook-cert
+  ports:
+  - name: webhook
+    port: 443
+    targetPort: 9443
 ```
 
-**Requirements:**
-- cert-manager must be installed in the cluster
-- Certificates are automatically renewed by cert-manager
+### OLM/OpenShift Deployment (Recommended)
+- **service-ca-operator** automatically creates and rotates certificates
+- The annotation `service.beta.openshift.io/serving-cert-secret-name` triggers certificate creation
+- Certificates are mounted at `/apiserver.local.config/certificates`
+- No manual certificate management needed
+
+### Alternative: cert-manager
+For non-OLM deployments, you can use cert-manager:
+- Install cert-manager in the cluster
+- Create Certificate and Issuer resources
+- Mount certificates at `/tmp/k8s-webhook-server/serving-certs`
 
 ## Deployment
 
@@ -180,8 +187,12 @@ kubectl get validatingwebhookconfiguration lease-validator.object-lease-controll
    kubectl get certificate -n object-lease-operator-system
    ```
 
-2. **Check cert-manager is installed:**
+2. **Check service-ca-operator is installed (OpenShift) or cert-manager:**
    ```bash
+   # On OpenShift
+   oc get pods -n openshift-service-ca-operator
+
+   # Or with cert-manager
    kubectl get pods -n cert-manager
    ```
 
@@ -198,7 +209,7 @@ kubectl logs -n object-lease-operator-system -l app=object-lease-webhook -f
 ```
 
 Common errors:
-- **"x509: certificate signed by unknown authority"**: Certificate not trusted, check cert-manager setup
+- **"x509: certificate signed by unknown authority"**: Certificate not trusted, check service-ca-operator or cert-manager setup
 - **"connection refused"**: Webhook service not reachable, check service and pod status
 - **"context deadline exceeded"**: Webhook timeout, check webhook performance/resources
 

@@ -60,7 +60,7 @@ spec:
             memory: 64Mi
         volumeMounts:
         - name: cert
-          mountPath: /tmp/k8s-webhook-server/serving-certs
+          mountPath: /apiserver.local.config/certificates
           readOnly: true
         securityContext:
           allowPrivilegeEscalation: false

@@ -5,6 +5,8 @@ metadata:
   namespace: system
   labels:
     app: object-lease-webhook
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: object-lease-webhook-cert
 spec:
   ports:
   - name: webhook
