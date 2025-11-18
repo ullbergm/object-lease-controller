@@ -37,6 +37,7 @@ func main() {
 		probeAddr     string
 		leaderElect   bool
 		leaderElectNs string
+		insecure      bool
 	)
 
 	// Parse command-line flags
@@ -48,6 +49,7 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address for health probes")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election")
 	flag.StringVar(&leaderElectNs, "leader-elect-namespace", "", "Namespace for leader election")
+	flag.BoolVar(&insecure, "insecure", false, "Run webhook server without TLS (for local testing only)")
 
 	opts := zap.Options{
 		Development: true,
@@ -122,13 +124,21 @@ func main() {
 
 	// Start webhook server in a goroutine
 	go func() {
-		setupLog.Info("starting webhook server", "port", webhookPort)
-		certFile := fmt.Sprintf("%s/%s", certDir, certName)
-		keyFile := fmt.Sprintf("%s/%s", certDir, keyName)
+		if insecure {
+			setupLog.Info("starting webhook server WITHOUT TLS (insecure mode)", "port", webhookPort)
+			if err := webhookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				setupLog.Error(err, "webhook server failed")
+				os.Exit(1)
+			}
+		} else {
+			setupLog.Info("starting webhook server with TLS", "port", webhookPort)
+			certFile := fmt.Sprintf("%s/%s", certDir, certName)
+			keyFile := fmt.Sprintf("%s/%s", certDir, keyName)
 
-		if err := webhookServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-			setupLog.Error(err, "webhook server failed")
-			os.Exit(1)
+			if err := webhookServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+				setupLog.Error(err, "webhook server failed")
+				os.Exit(1)
+			}
 		}
 	}()
 

@@ -94,8 +94,8 @@ run: build ## Run the application locally
 		-zap-log-level debug
 
 .PHONY: run-webhook
-run-webhook: build-webhook ## Run the webhook server locally
-	./$(BUILD_DIR)/lease-webhook
+run-webhook: build-webhook ## Run the webhook server locally (insecure mode)
+	./$(BUILD_DIR)/lease-webhook -insecure -webhook-port 8443
 
 # =============================================================================
 # Docker Targets - Main Controller
