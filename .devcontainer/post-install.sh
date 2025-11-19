@@ -17,3 +17,15 @@ if ! command -v golangci-lint >/dev/null 2>&1; then
 	rm -rf /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64* golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz || true
 	echo "golangci-lint installed"
 fi
+
+# Install OpenShift CLI if not present
+if ! command -v oc >/dev/null 2>&1; then
+	echo "oc not found, installing OpenShift CLI"
+	apt-get update || true
+	apt-get install -y --no-install-recommends ca-certificates curl || true
+	curl -sSL -o /tmp/openshift-client-linux.tar.gz "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" || true
+	tar -xzf /tmp/openshift-client-linux.tar.gz -C /usr/local/bin oc kubectl || true
+	rm /tmp/openshift-client-linux.tar.gz || true
+	chmod +x /usr/local/bin/oc /usr/local/bin/kubectl || true
+	echo "oc installed"
+fi

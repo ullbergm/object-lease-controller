@@ -12,6 +12,11 @@ kind:
   singular: ""
   plural: ""
 
+# These are used by the webhook configuration for the LeaseController CRD, not the helm chart itself.
+webhook:
+  enabled: false            # Enable validation for this GVK
+  failurePolicy: Ignore     # "Fail" to reject invalid objects or "Ignore" to log but allow
+
 leaderElection:
   enabled: true
 

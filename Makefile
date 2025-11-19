@@ -4,6 +4,7 @@
 
 # Image configurations
 IMG ?= ghcr.io/ullbergm/object-lease-controller:v1.0.0
+WEBHOOK_IMG ?= ghcr.io/ullbergm/object-lease-webhook:v1.0.0
 PLUGIN_IMG ?= ghcr.io/ullbergm/object-lease-console-plugin:v1.0.0
 
 # Build configurations
@@ -73,6 +74,13 @@ fuzz:
 build: tidy fmt vet test ## Build the binary
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/main.go
 
+.PHONY: build-webhook
+build-webhook: tidy fmt vet test ## Build the webhook binary
+	go build -o $(BUILD_DIR)/lease-webhook ./cmd/webhook/main.go
+
+.PHONY: build-all
+build-all: build build-webhook ## Build all binaries
+
 .PHONY: run
 run: build ## Run the application locally
 	./$(BUILD_DIR)/$(BINARY_NAME) \
@@ -84,6 +92,10 @@ run: build ## Run the application locally
 # 		-opt-in-label-key "object-lease-controller.ullberg.io/enabled" \
 # 		-opt-in-label-value true \
 		-zap-log-level debug
+
+.PHONY: run-webhook
+run-webhook: build-webhook ## Run the webhook server locally (insecure mode)
+	./$(BUILD_DIR)/lease-webhook -insecure -webhook-port 8443
 
 # =============================================================================
 # Docker Targets - Main Controller
@@ -102,6 +114,25 @@ docker-buildx: ## Build and push multi-platform Docker image for main controller
 	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
 	$(CONTAINER_TOOL) buildx use project-v3-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag $(IMG) -f Dockerfile .
+	- $(CONTAINER_TOOL) buildx rm project-v3-builder
+
+# =============================================================================
+# Docker Targets - Webhook
+# =============================================================================
+
+.PHONY: webhook-build
+webhook-build: ## Build Docker image for webhook
+	$(CONTAINER_TOOL) build -t $(WEBHOOK_IMG) -f Dockerfile.webhook .
+
+.PHONY: webhook-push
+webhook-push: webhook-build ## Build and push Docker image for webhook
+	$(CONTAINER_TOOL) push $(WEBHOOK_IMG)
+
+.PHONY: webhook-buildx
+webhook-buildx: ## Build and push multi-platform Docker image for webhook
+	- $(CONTAINER_TOOL) buildx create --name project-v3-builder
+	$(CONTAINER_TOOL) buildx use project-v3-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag $(WEBHOOK_IMG) -f Dockerfile.webhook .
 	- $(CONTAINER_TOOL) buildx rm project-v3-builder
 
 # =============================================================================
@@ -138,5 +169,6 @@ deploy-operator-and-plugin: ## Deploy operator and plugin to Kubernetes
 .PHONY: push-all
 push-all: ## Push all images and operator bundles
 	$(MAKE) docker-push
+	$(MAKE) webhook-push
 	$(MAKE) plugin-push
 	cd object-lease-operator && $(MAKE) docker-build docker-push bundle-push catalog-push && cd ..
