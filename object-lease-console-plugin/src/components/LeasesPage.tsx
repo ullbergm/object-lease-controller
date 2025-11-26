@@ -2,81 +2,12 @@ import * as React from 'react';
 import { PageSection, Title } from '@patternfly/react-core';
 import { ResourceLink, Timestamp, useK8sWatchResource, useK8sWatchResources, ResourceIcon } from '@openshift-console/dynamic-plugin-sdk';
 
-// Annotation keys - use short keys for safe static access
-type AnnotationKey = 'ttl' | 'expireAt' | 'status';
-
-const ANNOTATIONS = {
-  ttl: 'object-lease-controller.ullberg.io/ttl',
-  expireAt: 'object-lease-controller.ullberg.io/expire-at',
-  status: 'object-lease-controller.ullberg.io/lease-status',
-} as const;
-
-// Helper functions for safe annotation access - avoids dynamic property access security issues
-const getAnnotation = (annotations: Record<string, string> | undefined, key: AnnotationKey): string | undefined => {
-  if (!annotations) return undefined;
-  const annotationKey = ANNOTATIONS[key];
-  return Object.prototype.hasOwnProperty.call(annotations, annotationKey) ? annotations[annotationKey] : undefined;
-};
-
-const hasLeaseAnnotations = (annotations: Record<string, string> | undefined): boolean => {
-  if (!annotations) return false;
-  return (
-    Object.prototype.hasOwnProperty.call(annotations, ANNOTATIONS.ttl) ||
-    Object.prototype.hasOwnProperty.call(annotations, ANNOTATIONS.expireAt) ||
-    Object.prototype.hasOwnProperty.call(annotations, ANNOTATIONS.status)
-  );
-};
+const ANN_TTL = 'object-lease-controller.ullberg.io/ttl';
+const ANN_EXPIRE_AT = 'object-lease-controller.ullberg.io/expire-at';
+const ANN_STATUS = 'object-lease-controller.ullberg.io/lease-status';
 
 type GVK = { group: string; version: string; kind: string };
 type WatchCfg = { groupVersionKind: GVK; namespaced: boolean; isList: true; namespace?: string };
-
-// Kubernetes resource metadata type
-type K8sMetadata = {
-  uid?: string;
-  namespace?: string;
-  name?: string;
-  annotations?: Record<string, string>;
-};
-
-// Generic Kubernetes resource type
-type K8sResource = {
-  apiVersion?: string;
-  kind?: string;
-  metadata?: K8sMetadata;
-};
-
-// Watch result type from useK8sWatchResources
-type WatchResult = {
-  data?: K8sResource[];
-  loaded: boolean;
-  loadError?: Error;
-};
-
-type KindSpec = {
-  singular?: string;
-  kind?: string;
-  name?: string;
-  plural?: string;
-};
-
-type LeaseControllerSpec = {
-  group?: string;
-  version?: string;
-  kind?: string | KindSpec;
-};
-
-type LeaseController = K8sResource & {
-  spec?: LeaseControllerSpec;
-};
-
-// Item with lease annotations
-type LeaseItem = {
-  obj: K8sResource & { metadata: K8sMetadata & { name: string } };
-  gvk: GVK;
-};
-
-// Monitored GVK type
-type Monitored = { gvk: GVK; plural?: string };
 
 const LeasesPage = () => {
   // Try to use LeaseController CRs if present to determine which Kinds to scan
@@ -92,7 +23,7 @@ const LeasesPage = () => {
     const cfgs: Record<string, WatchCfg> = {};
     if (lcLoaded && !lcError && Array.isArray(leaseControllers) && leaseControllers.length > 0) {
       const set = new Set<string>();
-      leaseControllers.forEach((lc: LeaseController) => {
+      leaseControllers.forEach((lc: any) => {
         const g = lc?.spec?.group || '';
         const v = lc?.spec?.version as string | undefined;
         const rawKind = lc?.spec?.kind;
@@ -131,27 +62,27 @@ const LeasesPage = () => {
     return cfgs;
   }, [leaseControllers, lcLoaded, lcError]);
 
-  const resources = useK8sWatchResources<Record<string, WatchResult>>(watches);
+  const resources = useK8sWatchResources(watches as any);
 
-  const loaded = React.useMemo(() => Object.values(resources).every((r: WatchResult) => r.loaded || r.loadError), [resources]);
-  const loadError = React.useMemo(() => Object.values(resources).find((r: WatchResult) => r.loadError)?.loadError, [resources]);
+  const loaded = React.useMemo(() => Object.values(resources).every((r: any) => r.loaded || r.loadError), [resources]);
+  const loadError = React.useMemo(() => (Object.values(resources).find((r: any) => r.loadError) as any)?.loadError, [resources]);
 
-  const items: LeaseItem[] = React.useMemo(() => {
-    const map = new Map<string, LeaseItem>();
-    Object.entries(resources).forEach(([key, res]: [string, WatchResult]) => {
+  const items: Array<{ obj: any; gvk: GVK }> = React.useMemo(() => {
+    const map = new Map<string, { obj: any; gvk: GVK }>();
+    Object.entries(resources).forEach(([key, res]: any) => {
       if (!res?.data) return;
       const [groupPart, version, kind] = key.split('~');
       const group = groupPart === 'core' ? '' : groupPart;
       const gvk: GVK = { group, version, kind };
-      res.data.forEach((obj: K8sResource) => {
-        const anns = obj?.metadata?.annotations;
-        if (hasLeaseAnnotations(anns)) {
+      (res.data as any[]).forEach((obj) => {
+        const anns = obj?.metadata?.annotations || {};
+        if (anns[ANN_TTL] || anns[ANN_EXPIRE_AT] || anns[ANN_STATUS]) {
           const uid = obj?.metadata?.uid;
-          const name = obj?.metadata?.name;
-          if (!name) return;
-          const dedupKey = uid ?? `${obj?.metadata?.namespace ?? 'cluster'}-${name}`;
+          const dedupKey = uid
+            ? `${gvk.group}|${gvk.version}|${gvk.kind}|${uid}`
+            : `${gvk.group}|${gvk.version}|${gvk.kind}|${obj?.metadata?.namespace || ''}|${obj?.metadata?.name}`;
           if (!map.has(dedupKey)) {
-            map.set(dedupKey, { obj: obj as LeaseItem['obj'], gvk });
+            map.set(dedupKey, { obj, gvk });
           }
         }
       });
@@ -159,8 +90,8 @@ const LeasesPage = () => {
     const out = Array.from(map.values());
     // Sort by namespace, kind, name
     out.sort((a, b) => {
-      const nsA = a.obj.metadata.namespace ?? '';
-      const nsB = b.obj.metadata.namespace ?? '';
+      const nsA = a.obj.metadata.namespace || '';
+      const nsB = b.obj.metadata.namespace || '';
       if (nsA !== nsB) return nsA.localeCompare(nsB);
       if (a.gvk.kind !== b.gvk.kind) return a.gvk.kind.localeCompare(b.gvk.kind);
       return a.obj.metadata.name.localeCompare(b.obj.metadata.name);
@@ -169,10 +100,11 @@ const LeasesPage = () => {
   }, [resources]);
 
   // Derive the distinct set of monitored GVKs for display
+  type Monitored = { gvk: GVK; plural?: string };
   const monitored: Monitored[] = React.useMemo(() => {
     if (!lcLoaded || lcError || !Array.isArray(leaseControllers)) return [];
     const map = new Map<string, Monitored>();
-    leaseControllers.forEach((lc: LeaseController) => {
+    leaseControllers.forEach((lc: any) => {
       const g = lc?.spec?.group || '';
       const v = lc?.spec?.version as string | undefined;
       const rawKind = lc?.spec?.kind;
@@ -248,9 +180,9 @@ const LeasesPage = () => {
                       <td>
                         <ResourceLink groupVersionKind={gvk} name={obj.metadata.name} namespace={obj.metadata.namespace} />
                       </td>
-                      <td>{getAnnotation(obj?.metadata?.annotations, 'ttl') ?? '-'}</td>
-                      <td><Timestamp timestamp={getAnnotation(obj?.metadata?.annotations, 'expireAt')} /></td>
-                      <td>{getAnnotation(obj?.metadata?.annotations, 'status') ?? '-'}</td>
+                      <td>{obj?.metadata?.annotations?.[ANN_TTL] ?? '-'}</td>
+                      <td><Timestamp timestamp={obj?.metadata?.annotations?.[ANN_EXPIRE_AT]} /></td>
+                      <td>{obj?.metadata?.annotations?.[ANN_STATUS] ?? '-'}</td>
                     </tr>
                   );
                 })
