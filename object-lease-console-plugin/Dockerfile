@@ -1,5 +1,5 @@
 # Build stage
-FROM node:24-alpine AS builder
+FROM node:24-alpine@sha256:2867d550cf9d8bb50059a0fff528741f11a84d985c732e60e19e8e75c7239c43 AS builder
 WORKDIR /opt/app
 COPY package.json tsconfig.json webpack.config.js ./
 COPY src ./src
@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile || yarn install \
  && yarn build
 
 # Runtime stage: serve plugin assets over HTTPS with service certs
-FROM registry.access.redhat.com/ubi9/nginx-120:latest
+FROM registry.access.redhat.com/ubi9/nginx-120:latest@sha256:01cebb3515239cecfe3e3443e5cf040f892429e401d241e844698588ee2a3424
 # Copy build
 COPY --from=builder /opt/app/dist/ /opt/app-root/src/
 COPY run.sh /usr/local/bin/run.sh
