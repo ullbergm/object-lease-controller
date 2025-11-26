@@ -25,10 +25,10 @@ jobs:
           rm -rf /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64* golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz
 
       - name: Clone the code
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
         with:
           go-version-file: go.mod
 

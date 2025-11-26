@@ -17,10 +17,10 @@ jobs:
 
     steps:
       - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v6
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
 
       - name: 🏷️ Apply labels
-        uses: actions/labeler@v6
+        uses: actions/labeler@634933edcd8ababfe52f92936142cc22ac488b1b # v6
         with:
           configuration-path: .github/labeler.yml
           repo-token: "${{ secrets.GITHUB_TOKEN }}"
