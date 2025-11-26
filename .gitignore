@@ -32,3 +32,11 @@ tmp/**
 object-lease-operator/bundle/
 object-lease-operator/catalog/
 object-lease-operator/Dockerfile.catalog
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
