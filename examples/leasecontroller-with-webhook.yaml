@@ -1,0 +1,27 @@
+apiVersion: object-lease-controller.ullberg.io/v1
+kind: LeaseController
+metadata:
+  name: leasecontroller-deployments
+spec:
+  group: "apps"
+  version: "v1"
+  kind:
+    singular: "Deployment"
+    plural: "deployments"
+  webhook:
+    enabled: true
+    failurePolicy: Ignore  # Use "Fail" for strict validation
+---
+apiVersion: object-lease-controller.ullberg.io/v1
+kind: LeaseController
+metadata:
+  name: leasecontroller-pods
+spec:
+  group: ""
+  version: "v1"
+  kind:
+    singular: "Pod"
+    plural: "pods"
+  webhook:
+    enabled: true
+    failurePolicy: Fail  # Reject invalid TTL annotations

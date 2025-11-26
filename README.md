@@ -15,6 +15,7 @@ This project implements a Kubernetes operator that allows you to specify a TTL (
 - Dynamically deploys a controller for each configured GVK.
 - Controllers are only managing one GVK each, increasing scalability.
 - Leader election support for high availability.
+- **Admission webhook** for validating TTL annotation format (optional, per-GVK configuration).
 - Custom cleanup scripts via Kubernetes Jobs before object deletion.
 
 ## Architecture
@@ -49,11 +50,14 @@ kind: LeaseController
 metadata:
   name: deployment-controller
 spec:
-  group: ""
+  group: "apps"
+  version: "v1"
   kind:
     singular: "Deployment"
-    plural: "Deployments"
-  version: "v1"
+    plural: "deployments"
+  webhook:
+    enabled: true           # Optional: Enable admission webhook validation
+    failurePolicy: Ignore   # Optional: "Ignore" (default) or "Fail"
 ```
 
 ### Object annotation
@@ -289,3 +293,14 @@ Details on enabling and namespace participation are documented by Red Hat:
 - [Red Hat Documentation](https://docs.openshift.com/container-platform/latest/monitoring/enabling-monitoring-for-user-defined-projects.html)
 
 That is all you need. Your counters and histogram are already registered on the default registry, so Prometheus will scrape them from `/metrics` on the ServiceMonitor endpoint.
+
+## Admission Webhook
+
+The operator includes an optional **validating admission webhook** that validates TTL annotation format before objects are created or updated. This prevents invalid lease configurations from being applied.
+
+See [docs/webhook.md](docs/webhook.md) for detailed documentation on:
+- Architecture and how it works
+- Configuration options
+- Certificate management
+- Troubleshooting
+- Security considerations

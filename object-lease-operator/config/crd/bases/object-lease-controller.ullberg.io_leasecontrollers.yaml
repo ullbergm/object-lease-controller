@@ -56,6 +56,21 @@ spec:
                   plural:
                     description: Plural is the plural name of the kind.
                     type: string
+              webhook:
+                description: Webhook defines the validation webhook configuration for this GVK.
+                type: object
+                properties:
+                  enabled:
+                    description: Enabled determines whether validation is enabled for this GVK.
+                    type: boolean
+                    default: false
+                  failurePolicy:
+                    description: FailurePolicy defines how unrecognized errors are handled. Can be "Fail" (reject invalid objects) or "Ignore" (log but allow).
+                    type: string
+                    enum:
+                      - Fail
+                      - Ignore
+                    default: Ignore
           status:
             description: Status defines the observed state of LeaseController
             type: object
