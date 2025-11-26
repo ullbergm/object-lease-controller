@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ENV PATH="$PATH:~/.local/bin"
 
 # Install golangci-lint
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git xz-utils pre-commit gitleaks && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git xz-utils pre-commit gitleaks codespell shellcheck && rm -rf /var/lib/apt/lists/* \
     && GOLANGCI_LINT_VERSION=2.6.2 \
     && curl -sSLO "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
     && tar -xzf "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" -C /tmp \
