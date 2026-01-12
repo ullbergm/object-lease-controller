@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile || yarn install \
  && yarn build
 
 # Runtime stage: serve plugin assets over HTTPS with service certs
-FROM registry.access.redhat.com/ubi9/nginx-120:latest@sha256:99d8a1d13835606114bb7785056793903c8739b7e1213b549f82ef30e0d51e5d
+FROM registry.access.redhat.com/ubi9/nginx-120:latest@sha256:75779e0620f4d3510b4ebc3041411e4f9f4593443427c92fd0ae9916b0dd93b9
 # Copy build
 COPY --from=builder /opt/app/dist/ /opt/app-root/src/
 COPY run.sh /usr/local/bin/run.sh
