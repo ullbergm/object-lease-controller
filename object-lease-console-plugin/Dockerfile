@@ -1,5 +1,5 @@
 # Build stage
-FROM node:24-alpine@sha256:2867d550cf9d8bb50059a0fff528741f11a84d985c732e60e19e8e75c7239c43 AS builder
+FROM node:24-alpine@sha256:931d7d57f8c1fd0e2179dbff7cc7da4c9dd100998bc2b32afc85142d8efbc213 AS builder
 WORKDIR /opt/app
 COPY package.json tsconfig.json webpack.config.js ./
 COPY src ./src
