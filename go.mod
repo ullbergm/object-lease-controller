@@ -2,7 +2,7 @@ module object-lease-controller
 
 go 1.24.0
 
-toolchain go1.25.4
+toolchain go1.26.0
 
 require (
 	github.com/go-logr/logr v1.4.3
