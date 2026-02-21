@@ -16,14 +16,6 @@ jobs:
       - name: Install pre-commit
         run: sudo apt-get update -y && sudo apt-get install -y pre-commit codespell gitleaks
 
-      - name: Install golangci/golangci-lint
-        run: |
-          export GOLANGCI_LINT_VERSION=2.6.2
-          curl -sSLO "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz"
-          tar -xzf golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz -C /tmp
-          mv /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint /usr/local/bin/golangci-lint
-          rm -rf /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64* golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz
-
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -31,6 +23,11 @@ jobs:
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           go-version-file: go.mod
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          install-only: true
 
       - name: Check commits
         run: pre-commit run --hook-stage manual --all-files
