@@ -7,7 +7,7 @@
         ':maintainLockFilesWeekly',
         ':pinDigestsDisabled',
     ],
-    pinDigests: true,
+    pinDigests: false,
     commitMessageTopic: '{{depName}}',
     commitMessageExtra: 'to {{newVersion}}',
     commitMessageSuffix: '',
