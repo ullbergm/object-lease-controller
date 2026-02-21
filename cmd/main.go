@@ -331,7 +331,7 @@ func newLeaseWatcher(mgr ctrl.Manager, gvk schema.GroupVersionKind, leaderElecti
 	return &controllers.LeaseWatcher{
 		Client:   mgr.GetClient(),
 		GVK:      gvk,
-		Recorder: mgr.GetEventRecorderFor(leaderElectionID),
+		Recorder: mgr.GetEventRecorder(leaderElectionID),
 		Annotations: controllers.Annotations{
 			TTL:               AnnTTL,
 			LeaseStart:        AnnLeaseStart,
@@ -360,7 +360,7 @@ func configureNamespaceReconciler(mgr ctrl.Manager, optInLabelKey, optInLabelVal
 	tracker := util.NewNamespaceTracker()
 	nw := &controllers.NamespaceReconciler{
 		Client:     mgr.GetClient(),
-		Recorder:   mgr.GetEventRecorderFor(leaderElectionID),
+		Recorder:   mgr.GetEventRecorder(leaderElectionID),
 		LabelKey:   optInLabelKey,
 		LabelValue: optInLabelValue,
 		Tracker:    tracker,
