@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/record"
 	controller_runtime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -34,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 )
 
 // helpers
@@ -1585,3 +1587,5 @@ func (f *fakeManager) AddReadyzCheck(name string, check healthz.Checker) error  
 func (f *fakeManager) GetWebhookServer() webhook.Server                         { return nil }
 func (f *fakeManager) GetLogger() logr.Logger                                   { return logr.Discard() }
 func (f *fakeManager) GetControllerOptions() config.Controller                  { return config.Controller{} }
+func (f *fakeManager) GetConverterRegistry() conversion.Registry                { return nil }
+func (f *fakeManager) GetEventRecorder(name string) events.EventRecorder        { return nil }

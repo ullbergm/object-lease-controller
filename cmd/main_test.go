@@ -19,6 +19,7 @@ import (
 
 	logr "github.com/go-logr/logr"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/record"
 	config "sigs.k8s.io/controller-runtime/pkg/config"
 
@@ -29,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 	// ctrl alias not required; we use manager.Runnable from pkg/manager
 )
 
@@ -73,6 +75,8 @@ func (f *fakeManager) AddReadyzCheck(name string, check healthz.Checker) error  
 func (f *fakeManager) GetWebhookServer() webhook.Server                         { return nil }
 func (f *fakeManager) GetLogger() logr.Logger                                   { return logr.Discard() }
 func (f *fakeManager) GetControllerOptions() config.Controller                  { return config.Controller{} }
+func (f *fakeManager) GetConverterRegistry() conversion.Registry                { return nil }
+func (f *fakeManager) GetEventRecorder(name string) events.EventRecorder        { return nil }
 
 // The rest of the manager methods are not used by healthCheck; add stubs to satisfy interface
 func (t *testMgr) GetScheme() *runtime.Scheme                                           { return runtime.NewScheme() }
@@ -90,6 +94,8 @@ func (t *testMgr) AddReadyzCheck(name string, check healthz.Checker) error      
 func (t *testMgr) GetWebhookServer() webhook.Server                                     { return nil }
 func (t *testMgr) GetLogger() logr.Logger                                               { return logr.Discard() }
 func (t *testMgr) GetControllerOptions() config.Controller                              { return config.Controller{} }
+func (t *testMgr) GetConverterRegistry() conversion.Registry                            { return nil }
+func (t *testMgr) GetEventRecorder(name string) events.EventRecorder                    { return nil }
 
 // GetRESTMapper already defined above
 
