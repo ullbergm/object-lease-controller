@@ -76,7 +76,15 @@ func (f *fakeManager) GetWebhookServer() webhook.Server                         
 func (f *fakeManager) GetLogger() logr.Logger                                   { return logr.Discard() }
 func (f *fakeManager) GetControllerOptions() config.Controller                  { return config.Controller{} }
 func (f *fakeManager) GetConverterRegistry() conversion.Registry                { return nil }
-func (f *fakeManager) GetEventRecorder(name string) events.EventRecorder        { return nil }
+func (f *fakeManager) GetEventRecorder(name string) events.EventRecorder {
+	return &fakeEventsRecorder{}
+}
+
+// fakeEventsRecorder implements events.EventRecorder for tests.
+type fakeEventsRecorder struct{}
+
+func (r *fakeEventsRecorder) Eventf(regarding runtime.Object, related runtime.Object, eventtype, reason, action, note string, args ...interface{}) {
+}
 
 // The rest of the manager methods are not used by healthCheck; add stubs to satisfy interface
 func (t *testMgr) GetScheme() *runtime.Scheme                                           { return runtime.NewScheme() }
@@ -95,7 +103,7 @@ func (t *testMgr) GetWebhookServer() webhook.Server                             
 func (t *testMgr) GetLogger() logr.Logger                                               { return logr.Discard() }
 func (t *testMgr) GetControllerOptions() config.Controller                              { return config.Controller{} }
 func (t *testMgr) GetConverterRegistry() conversion.Registry                            { return nil }
-func (t *testMgr) GetEventRecorder(name string) events.EventRecorder                    { return nil }
+func (t *testMgr) GetEventRecorder(name string) events.EventRecorder                    { return &fakeEventsRecorder{} }
 
 // GetRESTMapper already defined above
 

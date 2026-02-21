@@ -65,6 +65,19 @@ func setMeta(u *unstructured.Unstructured, gvk schema.GroupVersionKind, ns, name
 	u.SetName(name)
 }
 
+// fakeEventsRecorder implements events.EventRecorder for testing.
+type fakeEventsRecorder struct {
+	Events chan string
+}
+
+func newFakeEventsRecorder(bufSize int) *fakeEventsRecorder {
+	return &fakeEventsRecorder{Events: make(chan string, bufSize)}
+}
+
+func (f *fakeEventsRecorder) Eventf(regarding runtime.Object, related runtime.Object, eventtype, reason, action, note string, args ...interface{}) {
+	f.Events <- fmt.Sprintf("%s %s %s", eventtype, reason, fmt.Sprintf(note, args...))
+}
+
 func newWatcher(t *testing.T, gvk schema.GroupVersionKind, objs ...client.Object) (*LeaseWatcher, client.Client, *runtime.Scheme) {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -307,7 +320,7 @@ func TestEnsureLeaseStart_RecordsAndIncrementsMetrics(t *testing.T) {
 
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	now := time.Now().UTC()
 	_ = r.ensureLeaseStart(context.Background(), obj, now)
@@ -342,7 +355,7 @@ func TestMarkInvalidTTL_RecordsAndIncrementsMetrics(t *testing.T) {
 
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	r.markInvalidTTL(context.Background(), obj, fmt.Errorf("boom"))
 
@@ -443,7 +456,7 @@ func TestHandleExpired_RecordsEventAndIncrementsMetrics(t *testing.T) {
 
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
-	r.Recorder = record.NewFakeRecorder(1)
+	r.Recorder = newFakeEventsRecorder(1)
 
 	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
 	if err != nil {
@@ -452,7 +465,7 @@ func TestHandleExpired_RecordsEventAndIncrementsMetrics(t *testing.T) {
 
 	// event was recorded
 	select {
-	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+	case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 		if !strings.Contains(ev, "LeaseExpired") {
 			t.Fatalf("unexpected event: %v", ev)
 		}
@@ -501,7 +514,7 @@ func TestHandleExpired_CreatesCleanupJob_FireAndForget(t *testing.T) {
 	r.Annotations.OnDeleteJob = testOnDeleteJob
 	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	// run handleExpired which should attempt to create a cleanup job then delete
 	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
@@ -557,7 +570,7 @@ func TestHandleExpired_CleanupJobCreateFails(t *testing.T) {
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Client = &failCreateClient{Client: base}
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
@@ -572,7 +585,7 @@ func TestHandleExpired_CleanupJobCreateFails(t *testing.T) {
 	foundErr := false
 	for !foundErr {
 		select {
-		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 			if strings.Contains(ev, "CleanupJobFailed") {
 				foundErr = true
 			}
@@ -618,7 +631,7 @@ func TestHandleExpired_CleanupJobWaitFailure(t *testing.T) {
 	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
 	r.Client = &failCompleteClient{Client: base}
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
@@ -633,7 +646,7 @@ func TestHandleExpired_CleanupJobWaitFailure(t *testing.T) {
 	found := false
 	for !found {
 		select {
-		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 			if strings.Contains(ev, "CleanupJobFailed") {
 				found = true
 			}
@@ -671,7 +684,7 @@ func TestHandleExpired_InvalidCleanupConfigEmitsEvent(t *testing.T) {
 
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Annotations.OnDeleteJob = testOnDeleteJob
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	_, err := r.handleExpired(context.Background(), obj, time.Now().UTC())
 	if err != nil {
@@ -683,7 +696,7 @@ func TestHandleExpired_InvalidCleanupConfigEmitsEvent(t *testing.T) {
 	gotInvalid := false
 	for !gotInvalid {
 		select {
-		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 			if strings.Contains(ev, "CleanupJobConfigInvalid") {
 				gotInvalid = true
 			}
@@ -713,7 +726,7 @@ func TestExecuteCleanupJob_LeaseStartFallback(t *testing.T) {
 	r, _, _ := newWatcher(t, gvk, obj)
 	r.Annotations.OnDeleteJob = testOnDeleteJob
 	r.Client = base
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	cfgKeys := map[string]string{
 		"OnDeleteJob":       r.Annotations.OnDeleteJob,
@@ -786,7 +799,7 @@ func TestHandleExpired_CleanupJobWaitSuccess(t *testing.T) {
 	r.Annotations.JobWait = "object-lease-controller.ullberg.io/job-wait"
 
 	r.Client = &completeCreateClient{Client: base}
-	r.Recorder = record.NewFakeRecorder(10)
+	r.Recorder = newFakeEventsRecorder(10)
 
 	reg := withIsolatedRegistry(t)
 	r.Metrics = ometrics.NewLeaseMetrics(gvk)
@@ -802,7 +815,7 @@ func TestHandleExpired_CleanupJobWaitSuccess(t *testing.T) {
 	found := false
 	for !found {
 		select {
-		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 			if strings.Contains(ev, "CleanupJobCompleted") {
 				found = true
 			}
@@ -1414,11 +1427,11 @@ func TestCleanupLeaseAnnotations_RecordsEvent(t *testing.T) {
 	obj.SetAnnotations(map[string]string{"foo": "bar", defaultAnn().ExpireAt: "x", defaultAnn().Status: "y"})
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Recorder = record.NewFakeRecorder(1)
+	r.Recorder = newFakeEventsRecorder(1)
 	// remove TTL to trigger cleanup flow
 	r.cleanupLeaseAnnotations(context.Background(), obj)
 	select {
-	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+	case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 		if !strings.Contains(ev, "Removed lease annotations") {
 			t.Fatalf("unexpected event: %v", ev)
 		}
@@ -1434,11 +1447,11 @@ func TestEnsureLeaseStart_RecordsOnInvalidLeaseStart(t *testing.T) {
 	obj.SetAnnotations(map[string]string{defaultAnn().TTL: "1h", defaultAnn().LeaseStart: "not-a-time"})
 
 	r, _, _ := newWatcher(t, gvk, obj)
-	r.Recorder = record.NewFakeRecorder(1)
+	r.Recorder = newFakeEventsRecorder(1)
 	now := time.Now().UTC()
 	_ = r.ensureLeaseStart(context.Background(), obj, now)
 	select {
-	case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+	case ev := <-r.Recorder.(*fakeEventsRecorder).Events:
 		if !strings.Contains(ev, "LeaseStartReset") {
 			t.Fatalf("unexpected event: %v", ev)
 		}

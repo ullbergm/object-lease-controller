@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,7 +22,7 @@ type NamespaceReconciler struct {
 	LabelKey   string
 	LabelValue string
 	Tracker    *util.NamespaceTracker
-	Recorder   record.EventRecorder
+	Recorder   events.EventRecorder
 }
 
 func (r *NamespaceReconciler) SetupWithManager(mgr ctrl.Manager) error {

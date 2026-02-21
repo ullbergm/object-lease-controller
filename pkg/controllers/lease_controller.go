@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	controller_runtime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,7 +29,7 @@ type LeaseWatcher struct {
 	client.Client
 	GVK         schema.GroupVersionKind
 	Tracker     *util.NamespaceTracker
-	Recorder    record.EventRecorder
+	Recorder    events.EventRecorder
 	eventChan   chan util.NamespaceChangeEvent
 	Annotations Annotations
 	Metrics     *ometrics.LeaseMetrics
@@ -188,7 +188,7 @@ func (r *LeaseWatcher) cleanupLeaseAnnotations(ctx context.Context, obj *unstruc
 	obj.SetAnnotations(anns)
 	_ = r.Patch(ctx, obj, client.MergeFrom(base))
 	if r.Recorder != nil {
-		r.Recorder.Event(obj, "Normal", "LeaseAnnotationsCleaned", "Removed lease annotations because TTL is missing")
+		r.Recorder.Eventf(obj, nil, "Normal", "LeaseAnnotationsCleaned", "LeaseAnnotationsCleaned", "Removed lease annotations because TTL is missing")
 	}
 }
 
@@ -202,7 +202,7 @@ func (r *LeaseWatcher) ensureLeaseStart(ctx context.Context, obj *unstructured.U
 		anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
 		r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
 		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Warning", "LeaseStartReset", "Invalid lease-start, reset to now")
+			r.Recorder.Eventf(obj, nil, "Warning", "LeaseStartReset", "LeaseStartReset", "Invalid lease-start, reset to now")
 		}
 		return now
 	}
@@ -210,7 +210,7 @@ func (r *LeaseWatcher) ensureLeaseStart(ctx context.Context, obj *unstructured.U
 	anns[r.Annotations.LeaseStart] = now.Format(time.RFC3339)
 	r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.LeaseStart: anns[r.Annotations.LeaseStart]})
 	if r.Recorder != nil {
-		r.Recorder.Event(obj, "Normal", "LeaseStarted", "Lease started")
+		r.Recorder.Eventf(obj, nil, "Normal", "LeaseStarted", "LeaseStarted", "Lease started")
 	}
 	if r.Metrics != nil {
 		r.Metrics.LeasesStarted.Inc()
@@ -222,7 +222,7 @@ func (r *LeaseWatcher) markInvalidTTL(ctx context.Context, obj *unstructured.Uns
 	msg := fmt.Sprintf("Invalid TTL: %v", parseErr)
 	r.updateAnnotations(ctx, obj, map[string]string{r.Annotations.Status: msg})
 	if r.Recorder != nil {
-		r.Recorder.Event(obj, "Warning", "InvalidTTL", msg)
+		r.Recorder.Eventf(obj, nil, "Warning", "InvalidTTL", "InvalidTTL", "%s", msg)
 	}
 	if r.Metrics != nil {
 		r.Metrics.InvalidTTL.Inc()
@@ -238,7 +238,7 @@ func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unst
 		r.Annotations.Status:   leaseStatus,
 	})
 	if r.Recorder != nil {
-		r.Recorder.Event(obj, "Normal", "LeaseExpired", leaseStatus)
+		r.Recorder.Eventf(obj, nil, "Normal", "LeaseExpired", "LeaseExpired", "%s", leaseStatus)
 	}
 	if r.Metrics != nil {
 		r.Metrics.LeasesExpired.Inc()
@@ -262,14 +262,14 @@ func (r *LeaseWatcher) handleExpired(ctx context.Context, obj *unstructured.Unst
 		// Invalid configuration - log error, emit event, proceed with deletion
 		log.Error(err, "Invalid cleanup job configuration")
 		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Warning", "CleanupJobConfigInvalid", fmt.Sprintf("Invalid cleanup job config: %v", err))
+			r.Recorder.Eventf(obj, nil, "Warning", "CleanupJobConfigInvalid", "CleanupJobConfigInvalid", "Invalid cleanup job config: %v", err)
 		}
 	} else if config != nil {
 		// Cleanup job is configured - attempt to create and optionally wait
 		if err := r.executeCleanupJob(ctx, obj, config, expireAt); err != nil {
 			log.Error(err, "Cleanup job execution failed")
 			if r.Recorder != nil {
-				r.Recorder.Event(obj, "Warning", "CleanupJobFailed", fmt.Sprintf("Cleanup job failed: %v", err))
+				r.Recorder.Eventf(obj, nil, "Warning", "CleanupJobFailed", "CleanupJobFailed", "Cleanup job failed: %v", err)
 			}
 			if r.Metrics != nil {
 				r.Metrics.CleanupJobsFailed.Inc()
@@ -305,7 +305,7 @@ func (r *LeaseWatcher) executeCleanupJob(ctx context.Context, obj *unstructured.
 
 	log.Info("Cleanup job created", "job", job.Name, "namespace", job.Namespace)
 	if r.Recorder != nil {
-		r.Recorder.Event(obj, "Normal", "CleanupJobCreated", fmt.Sprintf("Created cleanup job: %s", job.Name))
+		r.Recorder.Eventf(obj, nil, "Normal", "CleanupJobCreated", "CleanupJobCreated", "Created cleanup job: %s", job.Name)
 	}
 	if r.Metrics != nil {
 		r.Metrics.CleanupJobsCreated.Inc()
@@ -317,7 +317,7 @@ func (r *LeaseWatcher) executeCleanupJob(ctx context.Context, obj *unstructured.
 		if err := util.WaitForJobCompletion(ctx, r.Client, job, config.Timeout); err != nil {
 			// Job failed or timed out
 			if r.Recorder != nil {
-				r.Recorder.Event(obj, "Warning", "CleanupJobTimeout", fmt.Sprintf("Cleanup job did not complete: %v", err))
+				r.Recorder.Eventf(obj, nil, "Warning", "CleanupJobTimeout", "CleanupJobTimeout", "Cleanup job did not complete: %v", err)
 			}
 			return fmt.Errorf("cleanup job did not complete: %w", err)
 		}
@@ -325,7 +325,7 @@ func (r *LeaseWatcher) executeCleanupJob(ctx context.Context, obj *unstructured.
 		// Job completed successfully
 		log.Info("Cleanup job completed successfully", "job", job.Name)
 		if r.Recorder != nil {
-			r.Recorder.Event(obj, "Normal", "CleanupJobCompleted", fmt.Sprintf("Cleanup job completed: %s", job.Name))
+			r.Recorder.Eventf(obj, nil, "Normal", "CleanupJobCompleted", "CleanupJobCompleted", "Cleanup job completed: %s", job.Name)
 		}
 		if r.Metrics != nil {
 			r.Metrics.CleanupJobsCompleted.Inc()
