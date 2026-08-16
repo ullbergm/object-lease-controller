@@ -27,6 +27,13 @@ const (
 	DefaultJobTimeout      = "30s"
 )
 
+const (
+	// scriptVolumeName is the name of the volume (and mount) holding the cleanup script.
+	scriptVolumeName = "script"
+	// trueValue is the string form of a boolean true used in label values.
+	trueValue = "true"
+)
+
 // CleanupJobConfig holds the configuration for a cleanup job
 type CleanupJobConfig struct {
 	ConfigMapName           string
@@ -165,7 +172,7 @@ func CreateCleanupJob(
 			Labels: map[string]string{
 				"object-lease-controller.ullberg.io/source-kind": gvk.Kind,
 				"object-lease-controller.ullberg.io/source-name": obj.GetName(),
-				"object-lease-controller.ullberg.io/cleanup-job": "true",
+				"object-lease-controller.ullberg.io/cleanup-job": trueValue,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -177,7 +184,7 @@ func CreateCleanupJob(
 					ServiceAccountName: config.ServiceAccount,
 					Volumes: []corev1.Volume{
 						{
-							Name: "script",
+							Name: scriptVolumeName,
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
@@ -203,7 +210,7 @@ func CreateCleanupJob(
 							EnvFrom: buildEnvFrom(config.EnvFromSecrets),
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "script",
+									Name:      scriptVolumeName,
 									MountPath: "/scripts",
 									ReadOnly:  true,
 								},
