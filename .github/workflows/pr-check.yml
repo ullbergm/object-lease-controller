@@ -25,9 +25,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
         with:
           install-only: true
+          version: v2.12.2
 
       - name: Check commits
         run: pre-commit run --hook-stage manual --all-files
