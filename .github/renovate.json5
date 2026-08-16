@@ -66,6 +66,20 @@
             ],
         },
         {
+            // controller-runtime is released in lockstep with the Kubernetes
+            // libraries and does not compile against a newer k8s.io/* minor.
+            // Keep them in one PR so neither half can block the other.
+            matchDatasources: [
+                'go',
+            ],
+            matchPackageNames: [
+                'k8s.io/**',
+                'sigs.k8s.io/controller-runtime',
+            ],
+            groupName: 'kubernetes monorepo',
+            groupSlug: 'kubernetes-monorepo',
+        },
+        {
             matchDatasources: [
                 'docker',
             ],
