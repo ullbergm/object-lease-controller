@@ -6,6 +6,9 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// metricsNamespace is the Prometheus namespace prefix for all controller metrics.
+const metricsNamespace = "object_lease_controller"
+
 // LeaseMetrics holds Prometheus metrics for the lease controller for a specific GVK.
 type LeaseMetrics struct {
 	// Info is a stable metric set to 1 with GVK labels, making the custom
@@ -34,62 +37,62 @@ func NewLeaseMetrics(gvk schema.GroupVersionKind) *LeaseMetrics {
 
 	m := &LeaseMetrics{
 		Info: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "info",
 			Help:        "Always 1; indicates the controller is running for the given GVK",
 			ConstLabels: constLabels,
 		}),
 		LeasesStarted: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "leases_started_total",
 			Help:        "Number of leases started (lease-start set)",
 			ConstLabels: constLabels,
 		}),
 		LeasesExpired: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "leases_expired_total",
 			Help:        "Number of leases that have expired",
 			ConstLabels: constLabels,
 		}),
 		InvalidTTL: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "invalid_ttl_total",
 			Help:        "Number of objects with invalid TTL annotation encountered",
 			ConstLabels: constLabels,
 		}),
 		ReconcileErrors: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "reconcile_errors_total",
 			Help:        "Number of reconcile errors",
 			ConstLabels: constLabels,
 		}),
 		ReconcileDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "reconcile_duration_seconds",
 			Help:        "Duration of LeaseWatcher reconcile in seconds",
 			Buckets:     prometheus.DefBuckets,
 			ConstLabels: constLabels,
 		}),
 		CleanupJobsCreated: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "cleanup_jobs_created_total",
 			Help:        "Number of cleanup jobs created",
 			ConstLabels: constLabels,
 		}),
 		CleanupJobsFailed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "cleanup_jobs_failed_total",
 			Help:        "Number of cleanup jobs that failed",
 			ConstLabels: constLabels,
 		}),
 		CleanupJobsCompleted: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "cleanup_jobs_completed_total",
 			Help:        "Number of cleanup jobs that completed successfully",
 			ConstLabels: constLabels,
 		}),
 		CleanupJobDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:   "object_lease_controller",
+			Namespace:   metricsNamespace,
 			Name:        "cleanup_job_duration_seconds",
 			Help:        "Duration of cleanup job execution in seconds",
 			Buckets:     prometheus.DefBuckets,

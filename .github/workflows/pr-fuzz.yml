@@ -8,7 +8,9 @@ on:
       - '.github/**'
 
 concurrency:
-  group: pr-fuzz
+  # Scope to the PR ref: an unscoped group makes every new push cancel the
+  # in-flight fuzz run of *other* open PRs, which reports as a failed check.
+  group: pr-fuzz-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
